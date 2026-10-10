@@ -10,6 +10,21 @@ Problem: what failed or would fail, with a source if any.
 Instead: what we did, and where it lives in the repo.
 ```
 
+## 2026-10-10 — Export through the connector instead of the public API
+
+Tried: `npm run export` against the n8n Cloud instance from the Claude Code container.
+Problem: the container's network policy does not reach `*.app.n8n.cloud`, and the public
+API would also need an API key in the environment settings.
+Instead: the connector's `get_workflow_details` returns the full workflow; its result is
+saved to a file and `npm run export -- --from <file>` runs the same sanitizer, inject
+stripping and hygiene checks on it. The live Code-node bodies were compared with
+`npm run build` output afterwards: identical, so the repo stays the source of truth.
+
+Also: one `update_workflow` call with the full SDK code of a 70 KB workflow is too large for
+the connector, so WF1 was created as a skeleton with empty Code nodes and the bodies were
+filled with `updateNodeParameters` per node. Config and prompts live only in the `Config`
+node; the other Code nodes read `$('Config').first().json`.
+
 ## 2026-10-10 — Claude through HTTP Request, Jev through the TypeSafe AI node
 
 Tried: n8n's Anthropic node (`@n8n/n8n-nodes-langchain.anthropic`, text/message) so that
