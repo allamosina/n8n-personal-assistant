@@ -1,0 +1,73 @@
+{
+  "$comment": "Copy to config/config.local.json (gitignored) and fill in. npm run build injects it into each workflow's Config node. Secrets do NOT go here: they live in n8n credentials.",
+  "timezone": "Europe/Prague",
+  "owner": {
+    "name": "Your Name",
+    "context": "One or two sentences the models should know, e.g. current role and that an active job search is under way.",
+    "tone": "Warm, direct, short. No filler. Sign off with first name only.",
+    "signature": "Your Name"
+  },
+  "telegram": {
+    "owner_chat_id": "000000000"
+  },
+  "notion": {
+    "inbox_database_id": "",
+    "digests_database_id": ""
+  },
+  "schedule": {
+    "work_start": "09:00",
+    "work_end": "18:00",
+    "meeting_buffer_min": 10,
+    "digest_time": "07:30",
+    "digest_days": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  "defaults": {
+    "estimate_min": 30,
+    "priority": "P2",
+    "max_planner_candidates": 40,
+    "email_body_max_chars": 6000
+  },
+  "models": {
+    "triage": "claude-haiku-5-5",
+    "enrich": "claude-haiku-5-5",
+    "draft": "claude-haiku-5-5",
+    "planner": "claude-sonnet-5-5"
+  },
+  "decider": {
+    "mode": "haiku",
+    "confidence_threshold": 0.7,
+    "jev_base_url": "https://api.typesafe.ai/v1",
+    "jev_model": "jev-latest",
+    "jev_timeout_ms": 10000
+  },
+  "filters": {
+    "$comment": "exclude_* lists are the privacy list: never sent to any model. exclude_chats accepts Telegram numeric IDs, @usernames, or \"name:<display name>\" (the only way to match senders who hide their account when forwarding).",
+    "ignore_senders": [],
+    "ignore_domains": [],
+    "exclude_senders": [],
+    "exclude_domains": [],
+    "exclude_chats": [],
+    "linkedin_domains": [
+      "linkedin.com"
+    ],
+    "linkedin_job_alert_senders": [
+      "jobalerts-noreply@linkedin.com",
+      "jobs-listings@linkedin.com"
+    ],
+    "linkedin_job_alert_subject_patterns": [
+      "new jobs? (for|match)",
+      "jobs? you may be interested in",
+      "is hiring"
+    ]
+  },
+  "language": {
+    "digest": "ru",
+    "titles": "ru"
+  }
+}

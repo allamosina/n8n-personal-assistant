@@ -1,0 +1,62 @@
+{
+  "$comment": "Authoritative Notion schema. Claude Code creates these databases through the Notion connector. Property bodies use the Notion API create-database format. Status is a select, not a status property (see docs/PRD-REVIEW.md, finding 3).",
+  "databases": {
+    "inbox": {
+      "title": "Assistant Inbox",
+      "properties": {
+        "Title": { "title": {} },
+        "Kind": { "select": { "options": [
+          { "name": "Action", "color": "blue" },
+          { "name": "Reply", "color": "purple" },
+          { "name": "FYI", "color": "gray" }
+        ] } },
+        "Status": { "select": { "options": [
+          { "name": "Inbox", "color": "red" },
+          { "name": "Planned", "color": "yellow" },
+          { "name": "In progress", "color": "blue" },
+          { "name": "Done", "color": "green" },
+          { "name": "Dropped", "color": "gray" }
+        ] } },
+        "Source": { "select": { "options": [
+          { "name": "Gmail", "color": "red" },
+          { "name": "LinkedIn", "color": "blue" },
+          { "name": "Telegram", "color": "purple" },
+          { "name": "Manual", "color": "default" }
+        ] } },
+        "Source ID": { "rich_text": {} },
+        "Link": { "url": {} },
+        "Summary": { "rich_text": {} },
+        "Sender": { "rich_text": {} },
+        "Due": { "date": {} },
+        "Priority": { "select": { "options": [
+          { "name": "P1", "color": "red" },
+          { "name": "P2", "color": "yellow" },
+          { "name": "P3", "color": "gray" }
+        ] } },
+        "Priority reason": { "rich_text": {} },
+        "Estimate (min)": { "number": { "format": "number" } },
+        "Draft created": { "checkbox": {} },
+        "Created by": { "select": { "options": [
+          { "name": "Assistant", "color": "blue" },
+          { "name": "Me", "color": "green" }
+        ] } },
+        "Decided by": { "select": { "options": [
+          { "name": "Jev", "color": "orange" },
+          { "name": "Haiku", "color": "purple" }
+        ] } },
+        "Confidence": { "number": { "format": "percent" } },
+        "Shadow decision": { "rich_text": {} }
+      }
+    },
+    "digests": {
+      "title": "Daily digests",
+      "properties": {
+        "Name": { "title": {} },
+        "Date": { "date": {} },
+        "Free minutes": { "number": { "format": "number" } },
+        "Planned minutes": { "number": { "format": "number" } },
+        "Overloaded": { "checkbox": {} }
+      }
+    }
+  }
+}
