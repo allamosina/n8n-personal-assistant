@@ -86,7 +86,7 @@ it can list credentials by name, create and update workflows, validate them, run
 publish. The seven pre-existing test workflows ("My workflow …", "Gmail app") are left
 untouched.
 
-## Phase 3 — Notion [CC]
+## Phase 3 — Notion [CC] — done 2026-10-10
 
 Claude Code creates "Assistant Inbox" and "Daily digests" from `notion/schema.json` through
 the Notion MCP connector, under a parent page the owner names, and writes the IDs to
