@@ -59,8 +59,12 @@ test('shadow mode acts on Haiku and records both', () => {
   const d = mergeDecision({ mode: 'shadow', jev: parseJevResponse(jevRaw(0.97)), haiku: parseHaikuDecision(haikuJson) });
   assert.equal(d.decided_by, 'Haiku');
   assert.equal(d.action_type, 'other');
-  assert.deepEqual(d.shadow.jev, { action_needed: true, p: 0.97, action_type: 'email_reply', priority: 'P1', estimate: 15 });
-  assert.equal(d.shadow.haiku.estimate, 60);
+  assert.deepEqual(d.shadow.jev, { action_needed: true, p_yes: 0.97, action_type: 'email_reply', priority: 'P1', estimate: 15 });
+  assert.deepEqual(d.shadow.haiku, { action_needed: true, self_confidence: 0.8, action_type: 'other', priority: 'P2', estimate: 60 });
+  // A confident "no" from Haiku must not read as a high probability of "yes".
+  const no = mergeDecision({ mode: 'shadow', jev: parseJevResponse(jevRaw(0.2)), haiku: parseHaikuDecision({ action_needed: false, action_type: null, priority: null, estimate_min: null, confidence: 0.9 }) });
+  assert.equal(no.shadow.haiku.self_confidence, 0.9);
+  assert.equal(no.shadow.haiku.p_yes, undefined);
   const err = mergeDecision({ mode: 'shadow', jevError: 'HTTP 503', haiku: parseHaikuDecision(haikuJson) });
   assert.deepEqual(err.shadow.jev, { error: 'HTTP 503' });
   const haikuDown = mergeDecision({ mode: 'shadow', jev: parseJevResponse(jevRaw(0.97)), haikuError: 'HTTP 529' });
@@ -76,6 +80,9 @@ test('jev mode: confident Jev wins, otherwise Haiku with a reason', () => {
   const down = mergeDecision({ mode: 'jev', jevError: 'timeout', haiku: parseHaikuDecision(haikuJson) });
   assert.equal(down.fallback_reason, 'jev_error');
   assert.throws(() => mergeDecision({ mode: 'jev', jevError: 'timeout' }), /No decision/);
+  // Unsure Jev and a failed Haiku: keep Jev's answer rather than lose the item.
+  const lastResort = mergeDecision({ mode: 'jev', jev: parseJevResponse(jevRaw(0.6)), haikuError: 'HTTP 529' });
+  assert.deepEqual([lastResort.decided_by, lastResort.fallback_reason, lastResort.action_needed], ['Jev', 'low_confidence_haiku_error', true]);
 });
 
 test('no action clears the task fields', () => {

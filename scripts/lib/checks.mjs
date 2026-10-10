@@ -9,11 +9,11 @@ const TELEGRAM_TYPES = ['n8n-nodes-base.telegram', 'n8n-nodes-base.telegramTool'
 const GMAIL_SEND_OPS = ['send', 'reply', 'sendAndWait'];
 
 // Endpoints that send. Matched anywhere in a workflow (URLs, Code nodes).
+// Any googleapis.com host (gmail., www., upload paths) and Telegram methods
+// that deliver a message: send*, forward*, copy*.
 const SEND_ENDPOINTS = [
-  /gmail\.googleapis\.com\/[^\s"']*\/messages\/send/i,
-  /gmail\.googleapis\.com\/[^\s"']*\/drafts\/send/i,
-  /googleapis\.com\/upload\/gmail\/[^\s"']*\/send/i,
-  /api\.telegram\.org\/bot[^\s"']*\/send/i,
+  /googleapis\.com\/(?:upload\/)?gmail\/[^\s"']*\/(?:messages|drafts)\/send/i,
+  /api\.telegram\.org\/bot[^\s"']*\/(?:send|forward|copy)\w*/i,
 ];
 
 // External-API node types that must retry (CLAUDE.md, workflow conventions).
@@ -24,6 +24,9 @@ const RETRY_TYPES = [
   'n8n-nodes-base.telegram',
   'n8n-nodes-base.googleCalendar',
 ];
+
+// The only accepted Telegram target: the owner chat from the Config node.
+export const OWNER_CHAT_EXPR = /^=\{\{\s*\$\(\s*['"]Config['"]\s*\)\.first\(\)\.json\.telegram\.owner_chat_id\s*\}\}$/;
 
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 // Addresses that may appear in committed workflows (examples, public no-reply senders).
@@ -49,8 +52,8 @@ export function checkNoSend(wf) {
     }
     if (EMAIL_SEND_TYPES.includes(n.type)) v.push(`${where(n)}: ${n.type} sends email`);
     if (TELEGRAM_TYPES.includes(n.type) && 'chatId' in p) {
-      if (!/owner_chat_id/.test(String(p.chatId))) {
-        v.push(`${where(n)}: Telegram chatId must come from config (expression referencing owner_chat_id)`);
+      if (!OWNER_CHAT_EXPR.test(String(p.chatId).trim())) {
+        v.push(`${where(n)}: Telegram chatId must be exactly ={{ $('Config').first().json.telegram.owner_chat_id }}`);
       }
     }
   }
@@ -62,13 +65,13 @@ export function checkNoSend(wf) {
   return v;
 }
 
-/** Convention checks: retries on external calls. */
+/** Convention checks: retries on external calls (at least 3 tries; n8n's default is 3). */
 export function checkConventions(wf) {
   const v = [];
   for (const n of wf.nodes || []) {
-    if (RETRY_TYPES.includes(n.type) && !n.retryOnFail) {
-      v.push(`${wf.name} / ${n.name}: external-API node must have "Retry on fail" enabled`);
-    }
+    if (!RETRY_TYPES.includes(n.type)) continue;
+    if (!n.retryOnFail) v.push(`${wf.name} / ${n.name}: external-API node must have "Retry on fail" enabled`);
+    else if ((n.maxTries ?? 3) < 3) v.push(`${wf.name} / ${n.name}: "Retry on fail" needs at least 3 tries`);
   }
   return v;
 }

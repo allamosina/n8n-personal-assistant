@@ -21,18 +21,27 @@ test('a plan that fits passes through unchanged', () => {
   assert.deepEqual(r.trimmed, []);
 });
 
-test('over capacity: lowest priority goes first, later one on ties', () => {
+test('over capacity: lowest priority goes first, later one on ties, then refill', () => {
   const plan = { today: [{ id: 'a' }, { id: 'b' }, { id: 'd' }, { id: 'c' }] }; // 180 min
   const r = enforceFeasibility(plan, { candidates, freeMinutes: 100, today: TODAY, overflowReason: 'no time' });
-  // Remove c (P3, 30) → 150; remove d (P2, later than b) → 120; remove b → 60.
-  assert.deepEqual(r.trimmed, ['c', 'd', 'b']);
-  assert.deepEqual(r.today.map((t) => t.id), ['a']);
-  assert.equal(r.planned_minutes, 60);
+  // Remove c (P3, 30) → 150; d (P2, later than b) → 120; b → 60. Refill: b (60) does
+  // not fit, d (30) fits → 90, c (30) does not.
+  assert.deepEqual(r.today.map((t) => t.id), ['a', 'd']);
+  assert.deepEqual(r.trimmed, ['c', 'b']);
+  assert.equal(r.planned_minutes, 90);
   assert.equal(r.proposed_minutes, 180);
   assert.equal(r.overloaded, true);
-  assert.equal(r.move[0].id, 'b');
+  assert.deepEqual(r.move.map((m) => m.id), ['b', 'c']);
   assert.equal(r.move[0].reason, 'no time');
   assert.equal(r.move[0].new_date, '2026-10-13');
+});
+
+test('a big task that can never fit does not push out a small one that does', () => {
+  const cands = [c('big', 'P1', 120), c('small', 'P3', 15)];
+  const r = enforceFeasibility({ today: [{ id: 'big' }, { id: 'small' }] }, { candidates: cands, freeMinutes: 60, today: TODAY });
+  assert.deepEqual(r.today.map((t) => t.id), ['small']);
+  assert.deepEqual(r.move.map((m) => m.id), ['big']);
+  assert.equal(r.planned_minutes, 15);
 });
 
 test('uses candidate estimates, drops unknown and duplicate IDs', () => {

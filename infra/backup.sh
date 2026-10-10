@@ -31,7 +31,8 @@ restart
 trap - EXIT
 
 # Integrity: the archive lists and contains the database.
-tar tzf "$ARCHIVE" | grep -q 'data/database.sqlite' || { echo "backup: database missing from $ARCHIVE" >&2; exit 1; }
+# grep -c reads the whole listing; grep -q would exit early and SIGPIPE tar under pipefail.
+tar tzf "$ARCHIVE" | grep -c 'data/database.sqlite$' >/dev/null || { echo "backup: database missing from $ARCHIVE" >&2; exit 1; }
 
 if [[ -n "${RCLONE_REMOTE:-}" ]]; then
   rclone copy "$ARCHIVE" "$RCLONE_REMOTE"

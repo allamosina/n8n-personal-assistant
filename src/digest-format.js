@@ -99,7 +99,8 @@ export function buildDigestSections(d, lang = 'ru') {
   ].filter((s) => s.lines.length > 0);
 
   if (!(plan.today || []).length && !(plan.move || []).length) {
-    sections.splice(Math.min(1, sections.length), 0, { key: 'today', heading: L.today, lines: [{ text: L.empty }] });
+    const at = sections[0]?.key === 'meetings' ? 1 : 0;
+    sections.splice(at, 0, { key: 'today', heading: L.today, lines: [{ text: L.empty }] });
   }
   return { header: `${L.title} ${d.date}`, summary, sections };
 }

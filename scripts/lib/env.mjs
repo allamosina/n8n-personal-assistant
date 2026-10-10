@@ -3,8 +3,9 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-export const ROOT = new URL('../../', import.meta.url).pathname;
+export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 export function loadEnv(file = join(ROOT, '.env')) {
   if (!existsSync(file)) return;

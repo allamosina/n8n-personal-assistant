@@ -6,7 +6,7 @@
 //   npm run deploy -- WF1 --dry-run   show what would happen, call nothing that writes
 
 import { loadEnv } from './lib/env.mjs';
-import { client, resolveForInstance, mergeLiveIdentity, shouldActivate, ERROR_WORKFLOW_NAME } from './lib/n8n.mjs';
+import { client, resolveForInstance, mergeLiveIdentity, shouldActivate, deployOrder } from './lib/n8n.mjs';
 import { build } from './build.mjs';
 import { runChecks } from './check-no-send.mjs';
 
@@ -28,14 +28,14 @@ try {
   const { violations } = runChecks();
   if (violations.length) fail(`refusing to deploy, npm run check reports:\n  - ${violations.join('\n  - ')}`);
 
-  const selected =
+  const matched =
     target === 'all'
       ? built
       : built.filter((b) => b.file.toUpperCase().startsWith(target.toUpperCase() + '-') || b.workflow.name === target);
-  if (!selected.length) fail(`no workflow matches "${target}"`);
+  if (!matched.length) fail(`no workflow matches "${target}"`);
 
-  // Deploy order matters: WF4 first (error workflow), then sub-workflows by number.
-  selected.sort((a, b) => (a.workflow.name === ERROR_WORKFLOW_NAME ? -1 : b.workflow.name === ERROR_WORKFLOW_NAME ? 1 : a.file.localeCompare(b.file)));
+  // WF4 first (error workflow), then each workflow after the sub-workflows it calls.
+  const selected = deployOrder(matched);
 
   const api = client({ host: process.env.N8N_HOST, apiKey: process.env.N8N_API_KEY });
   const live = await api.listWorkflows();
@@ -46,6 +46,8 @@ try {
     const existingId = idByName.get(workflow.name);
     if (dryRun) {
       console.log(`deploy (dry run): would ${existingId ? 'update ' + existingId : 'create'} "${workflow.name}"${activate && shouldActivate(workflow) ? ' and activate' : ''}`);
+      // Pretend it exists so workflows that call it resolve in the rest of the dry run.
+      if (!existingId) idByName.set(workflow.name, `(new: ${workflow.name})`);
       continue;
     }
     let id = existingId;

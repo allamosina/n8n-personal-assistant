@@ -44,6 +44,18 @@ test('own note and reply to bot', () => {
   assert.equal(r.reply_to_message_id, 40);
 });
 
+test('exclusion by display name covers hidden accounts', () => {
+  assert.ok(isExcludedOrigin({ type: 'hidden_user', sender_user_name: 'Anna K' }, ['name:anna k']));
+  assert.ok(isExcludedOrigin({ type: 'user', sender_user: { id: 1, first_name: 'Anna', last_name: 'K' } }, ['name:Anna K']));
+  assert.ok(isExcludedOrigin({ type: 'chat', sender_chat: { id: -5, title: 'Family' } }, ['name:family']));
+  assert.ok(!isExcludedOrigin({ type: 'hidden_user', sender_user_name: 'Anna' }, ['name:anna k', 'anna k']));
+});
+
+test('chat origin without a title has no "undefined" in the name', () => {
+  assert.equal(describeOrigin({ type: 'chat', sender_chat: { id: -1 }, author_signature: 'Bob' }).name, '(Bob)');
+  assert.equal(describeOrigin({ type: 'chat', sender_chat: { id: -1 } }).name, null);
+});
+
 test('exclusion by id or username', () => {
   const origin = { type: 'user', sender_user: { id: 77, username: 'AnnaK' } };
   assert.ok(isExcludedOrigin(origin, ['77']));

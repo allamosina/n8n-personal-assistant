@@ -29,6 +29,9 @@ test('snapEstimate and normalizeDate', () => {
   assert.equal(snapEstimate('x'), null);
   assert.equal(normalizeDate('2026-10-12T15:00:00+02:00'), '2026-10-12');
   assert.equal(normalizeDate('Monday'), null);
+  assert.equal(normalizeDate('2026-02-31'), null, 'no rollover to March');
+  assert.equal(normalizeDate('2026-13-01'), null);
+  assert.equal(normalizeDate('2028-02-29'), '2028-02-29');
   assert.equal(normalizeDate(null), null);
 });
 

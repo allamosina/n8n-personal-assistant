@@ -100,7 +100,8 @@ integration token, stored as an n8n credential.
   Every classification goes through `WF5 Decide`. Every Claude call is an HTTP Request
   node (not the LangChain Anthropic node) so `output_config` is under our control.
 - External-API nodes (HTTP Request, Notion, Gmail, Telegram, Google Calendar): "Retry on
-  fail" on, 3 attempts, 2 s wait; `npm run check` enforces it. `WF4` is the error workflow
+  fail" on with at least 3 tries; `npm run check` enforces it. Telegram nodes target
+  exactly `={{ $('Config').first().json.telegram.owner_chat_id }}`, also enforced. `WF4` is the error workflow
   for every other workflow.
 - Deterministic things (dedup, filtering, date math, capacity arithmetic, trimming the plan
   to fit) are code. Judgment (classification, summaries, drafts, prioritization) is a model.

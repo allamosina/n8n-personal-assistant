@@ -103,11 +103,14 @@ function finalize(d, forceActionNeeded, channel) {
   return { action_needed: true, action_type: type, priority: prio, estimate_min: est };
 }
 
-function compact(d) {
+// Jev reports a calibrated P(yes); Haiku a self-reported confidence in its own
+// answer. They are different measures, so they are stored under different names.
+function compact(d, source) {
   if (!d) return null;
+  const measure = source === 'jev' ? { p_yes: d.action_needed?.p_yes ?? null } : { self_confidence: d.action_needed?.confidence ?? null };
   return {
     action_needed: d.action_needed?.value ?? null,
-    p: d.action_needed?.p_yes ?? d.action_needed?.confidence ?? null,
+    ...measure,
     action_type: d.action_type?.value ?? null,
     priority: d.priority?.value ?? null,
     estimate: d.estimate?.value ?? null,
@@ -139,6 +142,12 @@ export function mergeDecision({ mode, threshold = 0.7, jev = null, jevError = nu
       fallbackReason = jevError || !jev ? 'jev_error' : 'low_confidence';
       primary = haiku;
       decidedBy = 'Haiku';
+      // Haiku failed too: a low-confidence Jev answer beats losing the item.
+      if (!haiku && jev && !jevError) {
+        primary = jev;
+        decidedBy = 'Jev';
+        fallbackReason = 'low_confidence_haiku_error';
+      }
     }
   } else {
     // haiku and shadow both act on Haiku; shadow falls back to Jev if Haiku failed.
@@ -157,7 +166,7 @@ export function mergeDecision({ mode, threshold = 0.7, jev = null, jevError = nu
 
   const shadow =
     mode === 'shadow'
-      ? { jev: jevError ? { error: jevError } : compact(jev), haiku: haikuError ? { error: haikuError } : compact(haiku) }
+      ? { jev: jevError ? { error: jevError } : compact(jev, 'jev'), haiku: haikuError ? { error: haikuError } : compact(haiku, 'haiku') }
       : null;
 
   return {

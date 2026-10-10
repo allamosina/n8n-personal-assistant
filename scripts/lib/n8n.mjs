@@ -24,6 +24,41 @@ const ACTIVATING_TRIGGERS = [
 export const ERROR_WORKFLOW_NAME = 'WF4 Error Handler';
 const NAME_REF = /^name:(.+)$/;
 
+/** Names of workflows this one calls through "name:" references. */
+export function dependenciesOf(wf) {
+  const deps = new Set();
+  for (const n of wf.nodes || []) {
+    const m = String(n.parameters?.workflowId?.value ?? '').match(NAME_REF);
+    if (m) deps.add(m[1]);
+  }
+  return [...deps];
+}
+
+/**
+ * Deploy order: the error workflow first, then every workflow after the
+ * sub-workflows it calls. Ties keep file-name order. Throws on cycles.
+ * @param {{file: string, workflow: object}[]} items
+ */
+export function deployOrder(items) {
+  const byName = new Map(items.map((i) => [i.workflow.name, i]));
+  const sorted = [...items].sort((a, b) => (a.workflow.name === ERROR_WORKFLOW_NAME ? -1 : b.workflow.name === ERROR_WORKFLOW_NAME ? 1 : a.file.localeCompare(b.file)));
+  const out = [];
+  const state = new Map();
+  const visit = (item, path) => {
+    const name = item.workflow.name;
+    if (state.get(name) === 'done') return;
+    if (state.get(name) === 'visiting') throw new Error(`sub-workflow cycle: ${[...path, name].join(' → ')}`);
+    state.set(name, 'visiting');
+    for (const dep of dependenciesOf(item.workflow)) {
+      if (byName.has(dep)) visit(byName.get(dep), [...path, name]);
+    }
+    state.set(name, 'done');
+    out.push(item);
+  };
+  for (const item of sorted) visit(item, []);
+  return out;
+}
+
 /** "WF1 Email Triage" -> "WF1-email-triage.json" */
 export function fileNameFor(name) {
   return (

@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fileNameFor, pickSettings, shouldActivate, resolveForInstance, resolveForRepo, mergeLiveIdentity, sanitize, toApiBody } from '../scripts/lib/n8n.mjs';
+import { fileNameFor, pickSettings, shouldActivate, resolveForInstance, resolveForRepo, mergeLiveIdentity, sanitize, toApiBody, deployOrder, dependenciesOf } from '../scripts/lib/n8n.mjs';
+import { ROOT } from '../scripts/lib/env.mjs';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 const exec = (value) => ({ name: 'Upsert', type: 'n8n-nodes-base.executeWorkflow', parameters: { workflowId: { __rl: true, mode: 'id', value } } });
 
@@ -51,4 +54,27 @@ test('sanitize removes instance data; toApiBody sends only accepted fields', () 
   assert.deepEqual(s.nodes[0], { name: 'T', credentials: { telegramApi: { id: '', name: 'telegramApi' } } });
   assert.deepEqual(s.settings, { executionOrder: 'v1' });
   assert.deepEqual(Object.keys(toApiBody(live)).sort(), ['connections', 'name', 'nodes', 'settings']);
+});
+
+test('deploy order: WF4 first, then every workflow after the sub-workflows it calls', () => {
+  const item = (name, ...deps) => ({ file: name.split(' ')[0] + '.json', workflow: { name, nodes: deps.map((d) => exec('name:' + d)) } });
+  const items = [
+    item('WF0 Upsert Item'),
+    item('WF1 Email Triage', 'WF5 Decide', 'WF0 Upsert Item'),
+    item('WF2 Telegram Intake', 'WF5 Decide', 'WF0 Upsert Item'),
+    item('WF3 Morning Planner'),
+    item('WF4 Error Handler'),
+    item('WF5 Decide'),
+  ];
+  const names = deployOrder(items).map((i) => i.workflow.name.split(' ')[0]);
+  assert.deepEqual(names, ['WF4', 'WF0', 'WF5', 'WF1', 'WF2', 'WF3']);
+  assert.deepEqual(dependenciesOf(items[1].workflow), ['WF5 Decide', 'WF0 Upsert Item']);
+  // A single selected workflow whose dependency is not in the set is still deployable.
+  assert.deepEqual(deployOrder([items[1]]).map((i) => i.workflow.name), ['WF1 Email Triage']);
+  assert.throws(() => deployOrder([item('WF7 A', 'WF8 B'), item('WF8 B', 'WF7 A')]), /cycle/);
+});
+
+test('repo root resolves to a real path', () => {
+  assert.ok(existsSync(join(ROOT, 'package.json')));
+  assert.ok(!ROOT.includes('%'));
 });

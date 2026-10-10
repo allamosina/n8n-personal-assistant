@@ -38,7 +38,8 @@ export function describeOrigin(origin) {
       return { name: origin.sender_user_name || null, id: null, username: null, link: null };
     case 'chat': {
       const c = origin.sender_chat || {};
-      const name = origin.author_signature ? `${c.title} (${origin.author_signature})` : c.title || null;
+      const title = c.title || null;
+      const name = origin.author_signature ? [title, `(${origin.author_signature})`].filter(Boolean).join(' ') : title;
       return { name, id: c.id != null ? String(c.id) : null, username: c.username || null, link: null };
     }
     case 'channel': {
@@ -53,12 +54,16 @@ export function describeOrigin(origin) {
 
 /**
  * True when the forward's origin is on the privacy exclusion list.
- * Entries may be numeric IDs or @usernames.
+ * Entries may be numeric IDs, @usernames, or "name:<display name>". The name
+ * form is the only way to match a sender who hides their account when
+ * forwarded (Telegram then gives only a display name).
  */
 export function isExcludedOrigin(origin, excludeChats = []) {
   const o = describeOrigin(origin);
-  const keys = [o.id, o.username && o.username.toLowerCase(), o.username && '@' + o.username.toLowerCase()].filter(Boolean);
-  return (excludeChats || []).some((e) => keys.includes(String(e).toLowerCase()));
+  const lower = (s) => String(s).trim().toLowerCase();
+  const rawName = origin?.type === 'user' ? [origin.sender_user?.first_name, origin.sender_user?.last_name].filter(Boolean).join(' ') : origin?.type === 'hidden_user' ? origin.sender_user_name : origin?.sender_chat?.title || origin?.chat?.title;
+  const keys = [o.id, o.username && lower(o.username), o.username && '@' + lower(o.username), rawName && 'name:' + lower(rawName)].filter(Boolean);
+  return (excludeChats || []).some((e) => keys.includes(lower(e)));
 }
 
 /**

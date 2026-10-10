@@ -19,7 +19,13 @@
     "work_end": "18:00",
     "meeting_buffer_min": 10,
     "digest_time": "07:30",
-    "digest_days": [1, 2, 3, 4, 5]
+    "digest_days": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
   },
   "defaults": {
     "estimate_min": 30,
@@ -41,14 +47,24 @@
     "jev_timeout_ms": 10000
   },
   "filters": {
+    "$comment": "exclude_* lists are the privacy list: never sent to any model. exclude_chats accepts Telegram numeric IDs, @usernames, or \"name:<display name>\" (the only way to match senders who hide their account when forwarding).",
     "ignore_senders": [],
     "ignore_domains": [],
     "exclude_senders": [],
     "exclude_domains": [],
     "exclude_chats": [],
-    "linkedin_domains": ["linkedin.com"],
-    "linkedin_job_alert_senders": ["jobalerts-noreply@linkedin.com", "jobs-listings@linkedin.com"],
-    "linkedin_job_alert_subject_patterns": ["new jobs? (for|match)", "jobs? you may be interested in", "is hiring"]
+    "linkedin_domains": [
+      "linkedin.com"
+    ],
+    "linkedin_job_alert_senders": [
+      "jobalerts-noreply@linkedin.com",
+      "jobs-listings@linkedin.com"
+    ],
+    "linkedin_job_alert_subject_patterns": [
+      "new jobs? (for|match)",
+      "jobs? you may be interested in",
+      "is hiring"
+    ]
   },
   "language": {
     "digest": "ru",

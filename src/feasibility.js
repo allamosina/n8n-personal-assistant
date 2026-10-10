@@ -48,14 +48,28 @@ export function enforceFeasibility(plan, { candidates, freeMinutes, today, workD
 
   const sum = () => todayList.reduce((s, t) => s + t.estimate_min, 0);
   const proposedMinutes = sum();
-  const trimmed = [];
+  const order = new Map(todayList.map((t, i) => [t.id, i]));
+  const removed = [];
   while (sum() > freeMinutes && todayList.length) {
     let idx = 0;
     todayList.forEach((t, i) => {
       if (RANK[t.priority] >= RANK[todayList[idx].priority]) idx = i;
     });
-    const [out] = todayList.splice(idx, 1);
-    trimmed.push(out.id);
+    removed.push(...todayList.splice(idx, 1));
+  }
+  // Greedy removal can overshoot: a big P1 that never fits pushes out a small
+  // P3 that would. Put removed items back, highest priority first, if they fit.
+  for (const t of [...removed].sort((a, b) => RANK[a.priority] - RANK[b.priority] || order.get(a.id) - order.get(b.id))) {
+    if (sum() + t.estimate_min <= freeMinutes) {
+      todayList.push(t);
+      todayList.sort((a, b) => order.get(a.id) - order.get(b.id));
+    }
+  }
+  const kept = new Set(todayList.map((t) => t.id));
+  const trimmed = removed.filter((t) => !kept.has(t.id)).map((t) => t.id);
+  // unshift in removal order, so the highest-priority moved item ends up first
+  for (const id of trimmed) {
+    const out = removed.find((t) => t.id === id);
     moveList.unshift({ id: out.id, title: out.title, priority: out.priority, reason: overflowReason, new_date: nextWorkday(today, workDays), link: out.link });
   }
 

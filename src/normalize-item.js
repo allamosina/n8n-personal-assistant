@@ -28,8 +28,10 @@ export function normalizeDate(d) {
   if (!d) return null;
   const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return null;
-  const date = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
-  return Number.isNaN(date.getTime()) ? null : `${m[1]}-${m[2]}-${m[3]}`;
+  const iso = `${m[1]}-${m[2]}-${m[3]}`;
+  const date = new Date(`${iso}T00:00:00Z`);
+  // Date rolls impossible days over (2026-02-31 → 2026-03-03); require a round trip.
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === iso ? iso : null;
 }
 
 /**

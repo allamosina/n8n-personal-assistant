@@ -21,12 +21,21 @@ test('email send nodes and send endpoints fail anywhere', () => {
   assert.equal(checkNoSend(wf(node('n8n-nodes-base.httpRequest', { url: 'https://gmail.googleapis.com/gmail/v1/users/me/drafts/send' }))).length, 1);
   assert.equal(checkNoSend(wf(node('n8n-nodes-base.code', { jsCode: "await fetch('https://api.telegram.org/bot123/sendMessage')" }))).length, 1);
   assert.deepEqual(checkNoSend(wf(node('n8n-nodes-base.httpRequest', { url: 'https://gmail.googleapis.com/gmail/v1/users/me/drafts' }))), []);
+  // Legacy host and upload path send just the same.
+  assert.equal(checkNoSend(wf(node('n8n-nodes-base.httpRequest', { url: 'https://www.googleapis.com/gmail/v1/users/me/messages/send' }))).length, 1);
+  assert.equal(checkNoSend(wf(node('n8n-nodes-base.httpRequest', { url: 'https://www.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media' }))).length, 1);
+  assert.equal(checkNoSend(wf(node('n8n-nodes-base.httpRequest', { url: 'https://api.telegram.org/bot1:x/forwardMessage' }))).length, 1);
+  assert.equal(checkNoSend(wf(node('n8n-nodes-base.httpRequest', { url: 'https://api.telegram.org/bot1:x/copyMessage' }))).length, 1);
+  assert.deepEqual(checkNoSend(wf(node('n8n-nodes-base.httpRequest', { url: 'https://api.telegram.org/bot1:x/getFile' }))), []);
 });
 
 test('Telegram must target the owner chat from config', () => {
   assert.deepEqual(checkNoSend(wf(node('n8n-nodes-base.telegram', { chatId: "={{ $('Config').first().json.telegram.owner_chat_id }}" }))), []);
   assert.equal(checkNoSend(wf(node('n8n-nodes-base.telegram', { chatId: '123456' }))).length, 1);
   assert.equal(checkNoSend(wf(node('n8n-nodes-base.telegram', { chatId: '={{ $json.message.chat.id }}' }))).length, 1);
+  // Mentioning owner_chat_id is not enough: a fallback to the incoming chat must fail.
+  assert.equal(checkNoSend(wf(node('n8n-nodes-base.telegram', { chatId: "={{ $('Config').first().json.telegram.owner_chat_id || $json.message.chat.id }}" }))).length, 1);
+  assert.deepEqual(checkNoSend(wf(node('n8n-nodes-base.telegram', { chatId: '={{ $("Config").first().json.telegram.owner_chat_id }}' }))), []);
   assert.deepEqual(checkNoSend(wf(node('n8n-nodes-base.telegramTrigger', {}))), []);
 });
 
@@ -34,6 +43,8 @@ test('external-API nodes must retry', () => {
   assert.equal(checkConventions(wf(node('n8n-nodes-base.httpRequest', {}))).length, 1);
   assert.deepEqual(checkConventions(wf(node('n8n-nodes-base.httpRequest', {}, { retryOnFail: true }))), []);
   assert.deepEqual(checkConventions(wf(node('n8n-nodes-base.code', {}))), []);
+  assert.equal(checkConventions(wf(node('n8n-nodes-base.notion', {}, { retryOnFail: true, maxTries: 2 }))).length, 1);
+  assert.deepEqual(checkConventions(wf(node('n8n-nodes-base.notion', {}, { retryOnFail: true, maxTries: 5 }))), []);
 });
 
 test('committed JSON: no instance IDs, credential IDs, webhook IDs, injected content or personal emails', () => {

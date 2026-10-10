@@ -49,7 +49,6 @@ services:
       - n8n
     environment:
       N8N_DOMAIN: ${N8N_DOMAIN}
-      ACME_EMAIL: ${ACME_EMAIL:-}
     ports:
       - "80:80"      # ACME HTTP challenge and redirect to HTTPS
       - "443:443"

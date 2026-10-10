@@ -37,6 +37,11 @@ test('empty plan says so', () => {
   assert.equal(m.sections[0].lines[0].text, labels('ru').empty);
 });
 
+test('no meetings: the empty-plan line comes first, before FYI', () => {
+  const m = buildDigestSections({ date: '2026-10-12', capacity: { free_minutes: 540, meetings: [] }, plan: { today: [], move: [], risks: [] }, fyi: [{ title: 'x' }], drafts: [] }, 'en');
+  assert.deepEqual(m.sections.map((s) => s.key), ['today', 'fyi']);
+});
+
 test('Russian labels by default, unknown language falls back to English', () => {
   assert.equal(buildDigestSections(data).sections[0].heading, 'Встречи');
   assert.equal(labels('cs').meetings, 'Meetings');
