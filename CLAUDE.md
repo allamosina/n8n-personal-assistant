@@ -7,7 +7,12 @@ with a feasibility check against the calendar. The assistant prepares and sugges
 owner decides and sends.
 
 Read first: `PRD.md` (product), `docs/PLAN.md` (build order and phases),
-`docs/PRD-REVIEW.md` (design decisions that deviate from or refine the PRD).
+`docs/PRD-REVIEW.md` (design decisions that deviate from or refine the PRD),
+`docs/SETUP.md` (what the owner has set up so far).
+
+**It runs on the owner's n8n Cloud instance**, reached through the n8n connector (MCP). The
+self-hosting files in `infra/` are an unused alternative. The instance also holds seven
+pre-existing test workflows ("My workflow …", "Gmail app"): leave them alone.
 
 ## Hard rules
 
@@ -29,8 +34,8 @@ Read first: `PRD.md` (product), `docs/PLAN.md` (build order and phases),
    here and injected into workflow JSON by `npm run build`. Never edit them in the n8n UI;
    the next deploy overwrites UI edits. Node layout and wiring may be edited in the UI and
    brought back with `npm run export`.
-6. **Ask before destructive actions on live systems**: deleting or deactivating workflows
-   on the server, changing the schema of a populated Notion database, restoring a backup.
+6. **Ask before destructive actions on live systems**: deleting, archiving or unpublishing
+   workflows on the instance, changing the schema of a populated Notion database.
 7. **Privacy exclusion list runs before any model call**, Jev included. Notion stores a
    summary and a link, never a full message body.
 
@@ -63,9 +68,12 @@ npm run deploy -- all --dry-run  # show what would change, write nothing
 npm run export                   # pull from n8n, sanitize, empty inject blocks, write workflows/
 ```
 
-Deploy and export need `N8N_HOST` and `N8N_API_KEY` in the environment (see `.env.example`).
-In a cloud session they come from the environment settings; the n8n host must be on the
-network allowlist.
+**Workflows are built through the n8n connector**: read its SDK reference and
+best-practice notes first, create or update the workflow, validate, test-run, then publish.
+The JSON toolchain above is the fallback and the hygiene gate: anything exported to
+`workflows/` must pass `npm run check`. Deploy and export over the public API need
+`N8N_HOST` and `N8N_API_KEY` in the environment settings and the host on the network
+allowlist; only set that up if the connector cannot do something.
 
 **Notion is managed through the Notion MCP connector**, not scripts: create the databases
 from `notion/schema.json`, query items for checks and the Jev-vs-Haiku comparison. Write
@@ -74,9 +82,11 @@ integration token, stored as an n8n credential.
 
 ## Workflow conventions
 
-- Names: `WF0 Upsert Item`, `WF1 Email Triage`, `WF2 Telegram Intake`,
-  `WF3 Morning Planner`, `WF4 Error Handler`, `WF5 Decide`. Build order is
-  WF4 → WF0 → WF5 → WF2 → WF1 → WF3 (simplest end-to-end path first).
+- Names: `WF1 Email Triage`, `WF2 Telegram Intake`, `WF3 Morning Planner`,
+  `WF4 Error Handler`. Build order is WF4 → WF2 → WF1 → WF3 (simplest end-to-end path
+  first). The shared steps **Upsert** (WF0 in the PRD) and **Decide** (WF5 in the PRD) are
+  node groups reused inside WF1 and WF2, not separate workflows: on n8n Cloud every
+  sub-workflow call counts against the 2 500 executions per month.
 - **Injection convention.** Inside a Code node, a block
 
   ```js
@@ -93,12 +103,13 @@ integration token, stored as an n8n credential.
   network. A test runs every module in a bare VM context, so this is enforced.
 - Every workflow has a `Config` Code node (`// @inject config as CONFIG`) so settings
   are in one place. Secrets never go there: they are n8n credentials.
-- Sub-workflow references in committed JSON are `name:WF0 Upsert Item`; deploy resolves
-  them to live IDs, export turns IDs back into names. Deploy also sets WF4 as each
-  workflow's error workflow and keeps credentials attached in the UI.
-- Every Notion write goes through `WF0 Upsert Item` (idempotent on `Source ID`).
-  Every classification goes through `WF5 Decide`. Every Claude call is an HTTP Request
-  node (not the LangChain Anthropic node) so `output_config` is under our control.
+- If a sub-workflow is ever needed, committed JSON references it as `name:<workflow
+  name>`; deploy resolves names to live IDs, export turns IDs back into names. Deploy also
+  sets WF4 as each workflow's error workflow and keeps credentials attached in the UI.
+- Every Notion write goes through the Upsert group (idempotent on `Source ID`). Every
+  classification goes through the Decide group. Claude calls use the HTTP Request node, or
+  the n8n Anthropic node through n8n Cloud's gateway credits if it supports
+  `output_config` structured output; decide once in Phase 4 and record it in `docs/NOTES.md`.
 - External-API nodes (HTTP Request, Notion, Gmail, Telegram, Google Calendar): "Retry on
   fail" on with at least 3 tries; `npm run check` enforces it. Telegram nodes target
   exactly `={{ $('Config').first().json.telegram.owner_chat_id }}`, also enforced. `WF4` is the error workflow
@@ -131,7 +142,7 @@ integration token, stored as an n8n credential.
 
 ## Jev (TypeSafe AI) rules
 
-- `WF5 Decide` answers four typed questions: `action_needed` (noul), `action_type`
+- The Decide group answers four typed questions: `action_needed` (noul), `action_type`
   (choice: `email_reply` / `other`), `priority` (choice P1–P3), `estimate` (choice
   15/30/60/120). Jev is called by HTTP Request (`POST /v1/systemone`, `model: jev-latest`);
   base URL is config so OpenRouter's `/api/v1/systemone` can stand in.
@@ -142,11 +153,13 @@ integration token, stored as an n8n credential.
   Haiku's confidence is self-reported, not calibrated: never compare the two as equals.
 - Jev never produces free text. Titles, summaries, due dates, drafts and plans are Claude.
 
-## n8n Community Edition gotchas
+## n8n gotchas
 
-- No Variables (`$vars`) in Community Edition, so config is injected at build time into
-  `Config` nodes. Environment access from nodes stays blocked (n8n 2.x default,
-  `N8N_BLOCK_ENV_ACCESS_IN_NODE=true`); nothing needs `$env`.
+- No Variables (`$vars`) on the Cloud Starter plan or in Community Edition, so config is
+  injected at build time into `Config` nodes. Nothing needs `$env`.
+- n8n Cloud Starter: 2 500 executions per month, and workflows pause when it runs out. No
+  sub-workflows, no polling faster than every 30 minutes; a poll with no new mail is not an
+  execution.
 - The Notion node has not reliably supported the `status` property type. `Status` is a
   `select` in `notion/schema.json`. If a Notion node cannot do something, use an HTTP
   Request node with the same Notion credential rather than fighting the node.
@@ -156,8 +169,8 @@ integration token, stored as an n8n credential.
 - Telegram messages are limited to 4096 characters: `src/digest-format.js` splits by section.
 - Gmail Trigger polls; its query must exclude `label:assistant/processed`, promotions,
   forums, spam and own sent mail. Notion `Source ID` is the real idempotency guard.
-- Database is SQLite (n8n default). Keep `EXECUTIONS_DATA_PRUNE=true` and a short
-  `EXECUTIONS_DATA_MAX_AGE` so it stays small. Backups are a tar of the n8n volume.
+- Self-hosting only (`infra/`): SQLite with execution pruning; backups are a tar of the
+  n8n volume.
 
 ## Data model
 
@@ -187,5 +200,5 @@ Whenever an n8n limitation forces a workaround, append a dated entry to `docs/NO
      privacy issue (hard rules above);
   3. the PR has no merge conflict and no open review thread from a human.
   Merge method: squash. After merging, restart the feature branch from the new `main`.
-- Changes to the live n8n server or Notion data are not covered by this rule; hard rule 6
+- Changes to the live n8n instance or Notion data are not covered by this rule; hard rule 6
   still applies.

@@ -1,89 +1,80 @@
 # Setup checklist (owner)
 
-Manual steps that need your accounts, payments or a browser sign-in. Claude Code does the
-rest. Order matters only where noted. Never paste tokens or keys into a chat: they go into
-n8n credentials, the server's `infra/.env`, or the cloud environment settings.
+Manual steps that need your accounts or a browser sign-in. Claude Code does the rest through
+the n8n and Notion connectors. Never paste tokens or keys into a chat: they go into n8n
+credentials or the Claude Code environment settings.
 
-## 1. Server and domain
+Status as of 2026-10-10. The project runs on **n8n Cloud** (existing Starter subscription),
+not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
 
-- [ ] Rent a small VPS (Hetzner CX22 class, about €4/month), Debian 12 or 13, with your SSH
-      public key added at creation.
-- [ ] Create a DNS `A` record for the subdomain (for example `n8n.<your-domain>`) pointing at
-      the VPS IP. HTTPS will not work until it resolves.
-- [ ] On the server, as root:
+## Done
 
-  ```bash
-  # copy the infra/ folder to the server first, e.g. scp -r infra root@<ip>:/root/
-  bash /root/infra/install.sh
-  cp /root/infra/{docker-compose.yml,Caddyfile,backup.sh,restore.sh} /opt/n8n-assistant/
-  cp /root/infra/.env.example /opt/n8n-assistant/.env && chmod 600 /opt/n8n-assistant/.env
-  # edit .env: N8N_DOMAIN, and N8N_ENCRYPTION_KEY from: openssl rand -hex 32
-  cd /opt/n8n-assistant && docker compose up -d
-  curl -fsS https://<your-subdomain>/healthz
-  ```
+- [x] **n8n Cloud** subscription and owner account.
+- [x] **n8n connector** enabled in n8n (Settings → MCP) and added in Claude
+      (claude.ai → Customize → Connectors). Claude Code sees the instance, its workflows and
+      the names of its credentials, never the secrets.
+- [x] **Gmail credential** in n8n ("Gmail account", OAuth2).
+- [x] **Telegram credential** in n8n ("Telegram account"), so a bot already exists.
+- [x] **OpenRouter credential** in n8n ("OpenRouter account"). This can serve the Jev route
+      (`decider.jev_base_url` set to OpenRouter) without a separate TypeSafe key.
+- [x] **Notion connector** in Claude, for creating the databases.
+- [x] Hetzner server: created by mistake during setup. **Delete it** in the Hetzner console
+      if not done yet, so it stops billing. Nothing on it is needed.
 
-- [ ] Open `https://<your-subdomain>` and create the n8n owner account.
-- [ ] In n8n: Settings → n8n API → create an API key.
+## To do
 
-## 2. Backups
+### 1. Telegram chat ID (2 minutes)
 
-- [ ] Configure an rclone remote on the server (`rclone config`), for example Google Drive,
-      then wrap it in a `crypt` remote named as in `RCLONE_REMOTE` in `.env`. The archive
-      holds the database and the encryption key together, so it must be encrypted.
-- [ ] Add the cron line from the top of `infra/backup.sh`, run `./backup.sh` once, then
-      `./restore.sh backups/<archive>` to verify it.
-- [ ] Store a copy of `N8N_ENCRYPTION_KEY` in your password manager.
+- [ ] Send any message to your bot in Telegram.
+- [ ] Open `https://api.telegram.org/bot<token>/getUpdates` in a browser, with the bot token
+      from BotFather (`/mybots` → your bot → API Token). Find `"chat":{"id":123456789,...}`
+      and tell Claude Code the number. It goes into `telegram.owner_chat_id` in
+      `config/config.local.json`, which is gitignored.
 
-## 3. Telegram bot
+### 2. Notion (5 minutes)
 
-- [ ] In Telegram, talk to @BotFather: `/newbot`, choose a name; keep the token.
-- [ ] Send any message to your new bot, then open
-      `https://api.telegram.org/bot<token>/getUpdates` in a browser and note
-      `message.chat.id`. That is `telegram.owner_chat_id` in `config/config.local.json`.
-- [ ] In n8n: Credentials → Telegram API → paste the token.
-
-## 4. Google (Gmail and Calendar)
-
-- [ ] In Google Cloud Console: create a project, enable the Gmail API and the Google
-      Calendar API.
-- [ ] OAuth consent screen: External, add yourself as a test user, then **publish the app
-      to "In production"**. In "Testing" status Google expires refresh tokens after 7 days
-      and the workflows stop silently. An unverified app in production is fine for your own
-      account; you will see a warning screen once.
-- [ ] Create an OAuth client (Web application) with the redirect URI
-      `https://<your-subdomain>/rest/oauth2-credential/callback`.
-- [ ] In n8n: Credentials → Gmail OAuth2 and Google Calendar OAuth2 → client ID and secret →
-      sign in.
-- [ ] In Gmail: create the labels `assistant/processed` and `assistant/fyi`.
-
-## 5. Notion
-
-- [ ] notion.so/profile/integrations → New internal integration for n8n, capabilities: read,
-      update and insert content. Keep the token.
-- [ ] Choose or create a parent page for the two databases and add the integration under
-      ⋯ → Connections.
-- [ ] Tell Claude Code which page to use: it creates "Assistant Inbox" and "Daily digests"
-      there through the Notion connector and writes the IDs to `config/config.local.json`.
+- [ ] Pick or create a parent page in Notion for the two databases and tell Claude Code its
+      name. Claude Code creates "Assistant Inbox" and "Daily digests" there from
+      `notion/schema.json`.
+- [ ] notion.so/profile/integrations → New internal integration, capabilities: read, update,
+      insert content. Keep the token.
+- [ ] On the parent page: ⋯ → Connections → add the integration.
 - [ ] In n8n: Credentials → Notion API → paste the token.
 
-## 6. Model APIs
+### 3. Google Calendar credential (5 minutes)
 
-- [ ] Anthropic Console: create an API key and set a monthly spend limit (for example $10;
-      expected use is about $2). In n8n: Credentials → Header Auth, name `x-api-key`, value
-      the key; call the credential "Anthropic".
-- [ ] Jev: request TypeSafe early access, or use OpenRouter's Jev route and set
-      `decider.jev_base_url` in config accordingly. In n8n: Credentials → Header Auth, name
-      `Authorization`, value `Bearer <key>`; call it "Jev". Until a key exists, keep
-      `decider.mode` at `haiku`.
+The Gmail credential exists, so a Google Cloud OAuth client exists too. Calendar needs its
+own credential with calendar scopes.
 
-## 7. Claude Code cloud sessions
+- [ ] In n8n: Credentials → Google Calendar OAuth2 API. If n8n Cloud offers "Sign in with
+      Google" there, use it. Otherwise reuse the client ID and secret from the Gmail
+      credential and enable the Google Calendar API in the same Google Cloud project.
+- [ ] If the Google OAuth consent screen is still in "Testing", publish it to "In
+      production": in Testing, Google expires the sign-in after 7 days and the workflows
+      stop silently.
 
-- [ ] In the cloud environment settings (session title bar → environment → Edit), add the
-      environment variables `N8N_HOST` (for example `https://n8n.<your-domain>`) and
-      `N8N_API_KEY`, and add the n8n host under allowed domains. New sessions pick them up.
+### 4. Gmail labels (1 minute)
 
-## 8. Local config
+- [ ] In Gmail: create the labels `assistant/processed` and `assistant/fyi`.
 
-- [ ] Copy `config/config.example.json` to `config/config.local.json` and fill in owner
-      details, chat ID, working hours and the first ignore and exclusion entries. The file
-      is gitignored. In a cloud session, Claude Code creates it from your answers.
+### 5. Model access (decide with Claude Code in the build phase)
+
+n8n Cloud lists Anthropic and TypeSafe AI (Jev) among its built-in "gateway" credential
+types, billed through n8n credits. Claude Code checks during Phase 4 whether that path
+supports structured output; if it does, no API keys are needed at all.
+
+- [ ] Fallback only: Anthropic API key with a monthly spend limit (about $10; expected use
+      is about $2). In n8n: Credentials → Header Auth, name `x-api-key`, call it "Anthropic".
+- [ ] Jev: the OpenRouter credential covers it. Keep `decider.mode` at `haiku` until the
+      shadow comparison in Phase 5.
+
+### 6. Optional: n8n public API key
+
+Only needed if the connector ever cannot do something. In n8n: Settings → n8n API → Create
+an API key, then add `N8N_HOST` and `N8N_API_KEY` to the Claude Code environment settings
+and the n8n host to its allowed domains.
+
+## Not needed anymore
+
+The `infra/` folder (Docker Compose, Caddy, backups) is kept as the self-hosting alternative
+described in the PRD. It is not used while the project runs on n8n Cloud.
