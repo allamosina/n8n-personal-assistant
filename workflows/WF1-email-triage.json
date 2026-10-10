@@ -1,0 +1,875 @@
+{
+  "name": "WF1 Email Triage",
+  "nodes": [
+    {
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 30,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "simple": false,
+        "maxResults": 20,
+        "filters": {
+          "q": "-label:assistant/processed -category:promotions -category:forums -category:social -from:me",
+          "readStatus": "both",
+          "includeSpamTrash": false,
+          "includeDrafts": false
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "gmailOAuth2"
+        }
+      }
+    },
+    {
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        80
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Single source of settings and prompts for this workflow. Other Code nodes\n// read $('Config').first().json; the build injects config/config.local.json\n// and prompts/*.md here and nowhere else.\n// @inject config as CONFIG\n// @end-inject\n// @inject prompts/decide.md as PROMPT_DECIDE\n// @end-inject\n// @inject prompts/enrich.md as PROMPT_ENRICH\n// @end-inject\n// @inject prompts/draft-reply.md as PROMPT_DRAFT\n// @end-inject\nreturn [{ json: { ...CONFIG, prompts: { decide: PROMPT_DECIDE, enrich: PROMPT_ENRICH, draft: PROMPT_DRAFT } } }];\n"
+      }
+    },
+    {
+      "name": "Prefilter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/prefilter.js as prefilter\n// @end-inject\n// Rule pre-filter: excluded and ignored senders never reach a model (hard rule 7).\nconst out = [];\n$input.all().forEach((item, idx) => {\n  const m = item.json;\n  const fromRaw =\n    typeof m.from === 'string'\n      ? m.from\n      : (m.from && (m.from.text || (m.from.value && m.from.value[0] && m.from.value[0].address))) || (m.headers && m.headers.from) || '';\n  const subject = m.subject || (m.headers && m.headers.subject) || '';\n  const verdict = prefilter.prefilterEmail({ from: fromRaw, subject }, CONFIG.filters);\n  if (verdict.action === 'drop') return;\n  const raw = m.text || m.textAsHtml || m.snippet || '';\n  const body = prefilter.trimBody(String(raw).replace(/<[^>]+>/g, ' '), CONFIG.defaults.email_body_max_chars);\n  const channel = verdict.action;\n  out.push({\n    json: {\n      message_id: m.id,\n      thread_id: m.threadId,\n      source_id: (channel === 'linkedin' ? 'linkedin:' : 'gmail:') + m.id,\n      source: channel === 'linkedin' ? 'LinkedIn' : 'Gmail',\n      channel,\n      from: fromRaw,\n      address: verdict.address,\n      subject,\n      received: m.date || (m.headers && m.headers.date) || new Date().toISOString(),\n      body,\n      link: 'https://mail.google.com/mail/u/0/#inbox/' + m.threadId,\n    },\n    pairedItem: { item: idx },\n  });\n});\nreturn out;\n"
+      }
+    },
+    {
+      "name": "Build decide request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/claude.js as claude\n// @end-inject\nconst PROMPT = CONFIG.prompts.decide;\nconst e = $input.item.json;\nconst vars = {\n  owner_name: CONFIG.owner.name,\n  owner_context: CONFIG.owner.context,\n  channel: e.channel,\n  channel_guidance: PROMPT.guidance[e.channel] || '',\n  sender: e.from,\n  subject: e.subject,\n  received: e.received,\n  body: e.body,\n};\nreturn { json: { ...e, request: claude.buildClaudeRequest(PROMPT, vars, CONFIG.models) } };\n"
+      }
+    },
+    {
+      "name": "Claude decide",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        740,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "name": "Parse decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/claude.js as claude\n// @end-inject\n// @inject src/decide-merge.js as decide\n// @end-inject\n// DECIDER_MODE is forced to \"haiku\" until the Jev branch exists in this workflow.\nconst email = $('Build decide request').item.json;\nconst response = $input.item.json;\nconst haiku = decide.parseHaikuDecision(claude.parseClaudeResponse(response));\nconst decision = decide.mergeDecision({ mode: 'haiku', threshold: CONFIG.decider.confidence_threshold, haiku, channel: email.channel });\nconst { request, ...rest } = email;\nreturn { json: { ...rest, ...decision, usage_decide: claude.usageOf(response) } };\n"
+      }
+    },
+    {
+      "name": "Route by decision",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1180,
+        300
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "renameOutput": true,
+              "outputKey": "FYI",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action_needed }}",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "Reply",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action_type }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "email_reply"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "Action",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action_type }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "other"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Unmatched",
+          "looseTypeValidation": true
+        }
+      }
+    },
+    {
+      "name": "FYI item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        80
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// No model call for FYI items: subject and sender as they are (PRD WF1 step 4).\nconst e = $input.item.json;\nreturn {\n  json: {\n    ...e,\n    kind: 'FYI',\n    title: e.subject || '(no subject)',\n    summary: '',\n    sender: e.from,\n    due: null,\n    priority: null,\n    estimate_min: null,\n    shadow_decision: e.shadow || null,\n  },\n};\n"
+      }
+    },
+    {
+      "name": "Normalize item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3480,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/normalize-item.js as normalize\n// @end-inject\n// Fan-in from the FYI, Action and Reply paths. Everything after this node reads\n// $('Normalize item').item.json, so the Notion and Gmail nodes stay generic.\nconst e = $input.item.json;\nconst item = normalize.normalizeItem(e, CONFIG.defaults);\nconst labels = CONFIG.gmail.labels;\nreturn {\n  json: {\n    item,\n    source_id: item.source_id,\n    message_id: e.message_id,\n    gmail_label_ids: item.kind === 'FYI' ? [labels.processed, labels.fyi] : [labels.processed],\n    notion_properties: normalize.toNotionProperties(item),\n    notion_update_properties: normalize.toNotionUpdateProperties(item),\n  },\n};\n"
+      }
+    },
+    {
+      "name": "Find existing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3700,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $('Config').first().json.notion.inbox_database_id }}/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ filter: { property: \"Source ID\", rich_text: { equals: $json.source_id } }, page_size: 1 }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "name": "Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3920,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.results.length }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "name": "Update item",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        4160,
+        200
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.results[0].id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: $('Normalize item').item.json.notion_update_properties }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "name": "Label processed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        4400,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "addLabels",
+        "messageId": "={{ $('Normalize item').item.json.message_id }}",
+        "labelIds": "={{ $('Normalize item').item.json.gmail_label_ids }}"
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "gmailOAuth2"
+        }
+      }
+    },
+    {
+      "name": "Create item",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        4160,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ parent: { database_id: $('Config').first().json.notion.inbox_database_id }, properties: $('Normalize item').item.json.notion_properties }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "name": "Build enrich request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/claude.js as claude\n// @end-inject\nconst PROMPT = CONFIG.prompts.enrich;\nconst LANG = { ru: 'Russian', en: 'English', cs: 'Czech' };\nconst e = $input.item.json;\nconst vars = {\n  owner_name: CONFIG.owner.name,\n  owner_context: CONFIG.owner.context,\n  title_language: LANG[CONFIG.language.titles] || CONFIG.language.titles,\n  today: $now.setZone(CONFIG.timezone).toISODate(),\n  channel: e.channel,\n  action_type: e.action_type,\n  priority: e.priority,\n  sender: e.from,\n  subject: e.subject,\n  note: '',\n  body: e.body,\n};\nreturn { json: { ...e, request: claude.buildClaudeRequest(PROMPT, vars, CONFIG.models) } };\n"
+      }
+    },
+    {
+      "name": "Claude enrich",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1660,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "name": "Parse enrich",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// @inject src/claude.js as claude\n// @end-inject\nconst e = $('Build enrich request').item.json;\nconst response = $input.item.json;\nconst r = claude.parseClaudeResponse(response);\nconst { request, ...rest } = e;\nreturn {\n  json: {\n    ...rest,\n    kind: e.action_type === 'email_reply' ? 'Reply' : 'Action',\n    title: r.title,\n    summary: r.summary,\n    due: r.due,\n    priority_reason: r.priority_reason,\n    sender: e.from,\n    shadow_decision: e.shadow || null,\n    usage_enrich: claude.usageOf(response),\n  },\n};\n"
+      }
+    },
+    {
+      "name": "Needs draft?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2100,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.kind }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Reply"
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "name": "Build draft request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2340,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/claude.js as claude\n// @end-inject\nconst PROMPT = CONFIG.prompts.draft;\nconst e = $input.item.json;\nconst vars = {\n  owner_name: CONFIG.owner.name,\n  owner_context: CONFIG.owner.context,\n  owner_tone: CONFIG.owner.tone,\n  owner_signature: CONFIG.owner.signature,\n  sender: e.from,\n  subject: e.subject,\n  received: e.received,\n  body: e.body,\n};\nreturn { json: { ...e, request: claude.buildClaudeRequest(PROMPT, vars, CONFIG.models) } };\n"
+      }
+    },
+    {
+      "name": "Claude draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2560,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "name": "Parse draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2780,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// @inject src/claude.js as claude\n// @end-inject\nconst e = $('Build draft request').item.json;\nconst response = $input.item.json;\nconst r = claude.parseClaudeResponse(response);\nconst { request, ...rest } = e;\nreturn {\n  json: {\n    ...rest,\n    draft_body: r.body,\n    draft_needs_input: r.needs_input,\n    draft_subject: /^re:/i.test(e.subject || '') ? e.subject : 'Re: ' + (e.subject || ''),\n    usage_draft: claude.usageOf(response),\n  },\n};\n"
+      }
+    },
+    {
+      "name": "Create Gmail draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3000,
+        200
+      ],
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "={{ $json.draft_subject }}",
+        "emailType": "text",
+        "message": "={{ $json.draft_body }}",
+        "options": {
+          "threadId": "={{ $json.thread_id }}",
+          "sendTo": "={{ $json.address }}"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "gmailOAuth2"
+        }
+      }
+    },
+    {
+      "name": "Mark draft created",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3220,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// The Gmail node outputs the draft, not the item: re-attach the item (SDK rule 7).\nconst e = $('Parse draft').item.json;\nreturn { json: { ...e, draft_created: true, draft_id: $input.item.json.id || null } };\n"
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prefilter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prefilter": {
+      "main": [
+        [
+          {
+            "node": "Build decide request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build decide request": {
+      "main": [
+        [
+          {
+            "node": "Claude decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude decide": {
+      "main": [
+        [
+          {
+            "node": "Parse decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse decision": {
+      "main": [
+        [
+          {
+            "node": "Route by decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by decision": {
+      "main": [
+        [
+          {
+            "node": "FYI item",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build enrich request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build enrich request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "FYI item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FYI item": {
+      "main": [
+        [
+          {
+            "node": "Normalize item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize item": {
+      "main": [
+        [
+          {
+            "node": "Find existing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find existing": {
+      "main": [
+        [
+          {
+            "node": "Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Exists?": {
+      "main": [
+        [
+          {
+            "node": "Update item",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update item": {
+      "main": [
+        [
+          {
+            "node": "Label processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create item": {
+      "main": [
+        [
+          {
+            "node": "Label processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build enrich request": {
+      "main": [
+        [
+          {
+            "node": "Claude enrich",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude enrich": {
+      "main": [
+        [
+          {
+            "node": "Parse enrich",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse enrich": {
+      "main": [
+        [
+          {
+            "node": "Needs draft?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs draft?": {
+      "main": [
+        [
+          {
+            "node": "Build draft request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build draft request": {
+      "main": [
+        [
+          {
+            "node": "Claude draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude draft": {
+      "main": [
+        [
+          {
+            "node": "Parse draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse draft": {
+      "main": [
+        [
+          {
+            "node": "Create Gmail draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Gmail draft": {
+      "main": [
+        [
+          {
+            "node": "Mark draft created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark draft created": {
+      "main": [
+        [
+          {
+            "node": "Normalize item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

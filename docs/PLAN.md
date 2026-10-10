@@ -111,6 +111,11 @@ in both places. Expected use: at most 48 Gmail polls per day (a poll with no new
 not an execution), a few Telegram messages per day, one digest per day, about 1 600 per
 month at the ceiling.
 
+**Status 2026-10-10.** The order was changed because the Telegram bot token was not in n8n
+yet: WF1 was built first (23 nodes, Haiku-only Decide, unpublished, exported to
+`workflows/WF1-email-triage.json`). It waits for the "Anthropic" and "Notion" credentials
+for its test run. WF4, WF2 and WF3 follow once the Telegram credential and chat ID exist.
+
 1. **WF4 Error Handler.** Error Trigger → format → Telegram. Test by pointing a throwaway
    workflow with a failing node at it.
 2. **WF2 Telegram Intake.** Telegram Trigger → chat-ID guard → `parse-forward.js` →
