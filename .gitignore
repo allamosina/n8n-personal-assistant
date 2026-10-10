@@ -1,0 +1,17 @@
+# Secrets and personal data — never commit
+.env
+infra/.env
+config/config.local.json
+
+# Raw exports and backups before sanitizing
+exports/
+backups/
+*.bak
+*.tar.gz
+
+# Node / OS noise
+node_modules/
+.DS_Store
+
+# Built workflows contain injected config (personal data)
+build/

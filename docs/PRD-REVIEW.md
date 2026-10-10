@@ -69,8 +69,9 @@ already in `CLAUDE.md`.
 - **Variables (`$vars`) are an Enterprise feature.** Section 8 "Config (n8n variables or a
   Notion settings page)" needs a different answer. Proposed: a committed
   `config/config.example.json`, a gitignored `config/config.local.json`, and a `Config`
-  Code node in every workflow that the build script fills from it; secrets come from
-  `$env` (requires `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`). Drop the Notion settings page:
+  Code node in every workflow that the build script fills from it; secrets stay in n8n
+  credentials, so nodes never need `$env` and environment access can stay blocked (the
+  n8n 2.x default). Drop the Notion settings page:
   it adds an API round-trip and parsing to every run and gains only phone editability.
 - **Notion `status` property type.** The Notion node has historically not supported
   `status` for filtering or creating pages; integrations in other tools report the same and
@@ -152,7 +153,7 @@ OpenRouter; test Russian and Czech in shadow mode".
 Compose becomes `n8n` + `caddy`. Environment: `GENERIC_TIMEZONE=Europe/Prague`,
 `WEBHOOK_URL=https://<host>/`, `N8N_ENCRYPTION_KEY` (generated once, in the backup),
 `EXECUTIONS_DATA_PRUNE=true`, `EXECUTIONS_DATA_MAX_AGE=336`,
-`N8N_BLOCK_ENV_ACCESS_IN_NODE=false`, image tag pinned. Backup is a nightly tar of the n8n
+`N8N_BLOCK_ENV_ACCESS_IN_NODE=true`, image tag pinned. Backup is a nightly tar of the n8n
 volume plus `.env`, pushed with `rclone` to a Google Drive folder or any S3-compatible
 bucket; do one restore test. VPS: Hetzner CX22 class, Debian 12, SSH key only, UFW with
 22 and 443 only.

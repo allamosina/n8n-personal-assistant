@@ -1,0 +1,18 @@
+{
+  "name": "n8n-personal-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal assistant on self-hosted n8n: triage Gmail/LinkedIn/Telegram into Notion, draft replies, morning digest.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check-no-send.mjs",
+    "deploy": "node scripts/deploy.mjs",
+    "export": "node scripts/export.mjs"
+  },
+  "license": "MIT"
+}

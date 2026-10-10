@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Unit tests
+        run: npm test
+      - name: Build workflows (example config)
+        run: npm run build
+      - name: No-send and hygiene check
+        run: npm run check
+
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Shellcheck
+        run: shellcheck -x infra/*.sh
+      - name: Compose file is valid
+        working-directory: infra
+        env:
+          N8N_DOMAIN: n8n.example.com
+          N8N_ENCRYPTION_KEY: ci-dummy-key
+          N8N_VERSION: 2.42.6
+        run: docker compose -f docker-compose.yml config --quiet
