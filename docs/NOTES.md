@@ -10,6 +10,16 @@ Problem: what failed or would fail, with a source if any.
 Instead: what we did, and where it lives in the repo.
 ```
 
+## 2026-10-10 — n8n Cloud instead of a VPS; sub-workflows count as executions
+
+Tried: self-hosted n8n on a Hetzner VPS as the PRD specifies. The server came up, but
+Chrome flags free DuckDNS addresses as dangerous, and the owner already pays for n8n Cloud.
+Problem: a second n8n for €7/month plus DNS, HTTPS and backups, for nothing.
+Instead: n8n Cloud through the n8n connector; the server is deleted and `infra/` kept as an
+alternative. Consequence: the Starter quota is 2 500 executions per month and every
+sub-workflow call is one execution, so the PRD's WF0 and WF5 sub-workflows become node
+groups reused inside WF1 and WF2.
+
 ## 2026-10-10 — Code nodes cannot import modules
 
 Tried: keeping Code-node logic as tested ES modules and importing them in n8n.

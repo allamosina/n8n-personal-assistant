@@ -1,9 +1,14 @@
 # Development plan
 
 Phased plan for building the assistant described in `PRD.md`, with the changes from
-`docs/PRD-REVIEW.md`. Build order inside n8n follows the PRD: **WF4 → WF0 → WF5 → WF2 →
-WF1 → WF3**, simplest end-to-end path first. Phases 0 and 1 run in parallel: Phase 0 needs
-no server, Phase 1 is manual setup by the owner.
+`docs/PRD-REVIEW.md`. Build order inside n8n follows the PRD: **WF4 → WF2 → WF1 → WF3**,
+simplest end-to-end path first; the shared steps WF0 (upsert) and WF5 (decide) are built
+once and reused inside the callers (see Phase 4). Phase 0 is done; Phase 1 is the owner's
+manual setup.
+
+**Hosting decision, 2026-10-10:** the project runs on the owner's existing **n8n Cloud**
+Starter subscription, reached from Claude Code through the n8n connector. The self-hosting
+setup in `infra/` stays in the repo as the alternative described in the PRD but is not used.
 
 Legend: **[CC]** Claude Code does it, **[owner]** requires the owner (accounts, OAuth,
 payments), **[both]** Claude Code prepares, owner confirms.
@@ -11,18 +16,17 @@ payments), **[both]** Claude Code prepares, owner confirms.
 ## Target architecture (after review)
 
 ```
-Gmail Trigger ──► WF1 Email Triage ──┐
-                                     ├──► WF5 Decide ──► WF0 Upsert Item ──► Notion "Assistant Inbox"
-Telegram bot ──► WF2 Telegram Intake ┘   (Jev | Haiku,                               │
-                                          mode switch)                                ▼
-Schedule 07:30 ──► WF3 Morning Planner ◄── Google Calendar (today)            reads open items
+Gmail Trigger ──► WF1 Email Triage ──┐  each: Decide (Jev | Haiku) ──► Upsert ──► Notion "Assistant Inbox"
+Telegram bot ──► WF2 Telegram Intake ┘                                                      │
+                                                                                            ▼
+Schedule 07:30 ──► WF3 Morning Planner ◄── Google Calendar (today)                  reads open items
                         │
                         └──► Telegram digest (split ≤4096) + Notion "Daily digests" page
 Any failure ──► WF4 Error Handler ──► Telegram alert
 ```
 
-Runtime: one VPS, Docker Compose with `n8n` (SQLite) and `caddy`. Repo tooling: Node.js
-20+, no dependencies.
+Runtime: n8n Cloud (Starter: 2 500 executions per month, no active-workflow cap). Repo
+tooling: Node.js 20+, no dependencies.
 
 ## Phase 0 — Repository foundation [CC] — done
 
@@ -60,42 +64,27 @@ Everything here runs locally with `node --test`; no server, no credentials.
    error workflow, credentials kept across redeploys), `export.mjs` (sanitize and empty
    inject blocks). Notion setup and the Jev-vs-Haiku comparison use the Notion connector.
 7. **Infra in `infra/`:** compose with pinned n8n 2.42.6 (SQLite, pruning, env access
-   blocked) and Caddy 2.11.7; `install.sh`; `backup.sh` (stops n8n for a consistent
-   SQLite copy, rclone to an encrypted remote); `restore.sh` (verify or apply).
+   blocked) and Caddy 2.11.7; `install.sh`; `backup.sh`; `restore.sh`. Kept as the
+   self-hosting alternative; unused on n8n Cloud.
 8. **Docs:** `docs/SETUP.md` (owner checklist) and `docs/NOTES.md` (friction log).
 
-Exit criteria: `npm test` green; `npm run check` green on the (still empty) workflows set;
-`npm run build` succeeds; CI green.
+Exit criteria (met): `npm test` green; `npm run check` green on the (still empty)
+workflows set; `npm run build` succeeds; CI green.
 
-## Phase 1 — Manual setup [owner]
+## Phase 1 — Manual setup [owner] — in progress
 
-Checklist in `docs/SETUP.md`:
+Live checklist with status in `docs/SETUP.md`. Done: n8n Cloud with the n8n connector,
+Gmail, Telegram and OpenRouter credentials in n8n, Notion connector in Claude. Left: the
+owner's Telegram chat ID, a Notion parent page and integration token, a Google Calendar
+credential, the two Gmail labels. Model keys are decided in Phase 4 (n8n Cloud offers
+Anthropic and TypeSafe AI through its gateway credits).
 
-1. VPS (Hetzner CX22 class, Debian 12) and an `A` record for the subdomain.
-2. Telegram bot via BotFather; own chat ID (send `/start`, read `getUpdates`).
-3. Notion internal integration for n8n (its token becomes an n8n credential); pick a parent
-   page for the databases.
-4. Google Cloud project with OAuth client (Gmail read, modify labels, drafts; Calendar
-   read-only); add own account as test user.
-5. Anthropic API key. Jev API key (TypeSafe early access) or OpenRouter key.
-6. For Claude Code cloud sessions: add `N8N_HOST` and `N8N_API_KEY` as environment
-   variables and the n8n host to the environment's allowed domains.
-7. Gmail labels `assistant/processed` and `assistant/fyi`.
-8. Choose backup target (Google Drive folder via rclone, or an S3-compatible bucket).
+## Phase 2 — n8n instance [CC] — done
 
-## Phase 2 — Server [both]
-
-1. [CC] Run `install.sh` over SSH, copy `infra/`, fill `.env` (generate
-   `N8N_ENCRYPTION_KEY`), `docker compose up -d`, confirm HTTPS and `/healthz`.
-   This needs SSH access from the session; otherwise the owner runs the same commands
-   from `docs/SETUP.md`.
-2. [owner] Create the n8n owner account in the browser; create an API key; put it in the
-   local `.env` for the deploy script.
-3. [CC] Install the `backup.sh` cron (nightly 03:00 Europe/Prague), run one backup and
-   verify it with `restore.sh <archive>` (verify mode).
-
-Exit criteria: `https://<host>/healthz` returns OK; a dated backup exists in the remote
-target; the restore test listed the SQLite file and `.env`.
+n8n Cloud replaces the server. Claude Code reaches the instance through the n8n connector:
+it can list credentials by name, create and update workflows, validate them, run tests and
+publish. The seven pre-existing test workflows ("My workflow …", "Gmail app") are left
+untouched.
 
 ## Phase 3 — Notion [CC]
 
@@ -106,36 +95,45 @@ one with only a title) to exercise defaults later.
 
 ## Phase 4 — Workflows, one at a time [both]
 
-Each step: write the JSON in `workflows/`, `npm run deploy -- WFx`, run it with sample
-data, fix, then move on. The owner connects OAuth credentials in the n8n UI the first
-time a workflow needs them (Gmail, Calendar, Notion, Telegram, Anthropic, Jev as a
-generic header credential).
+**How workflows are built on n8n Cloud.** Claude Code creates and updates them through the
+n8n connector (Workflow SDK code), validates and test-runs them there, and publishes. The
+first step of the phase is reading the connector's SDK reference and best-practice notes and
+deciding how `src/` logic and `prompts/` are injected into Code nodes in that flow; the
+JSON toolchain (`npm run build`, `deploy`, `export`, `check`) stays as the fallback and as
+the hygiene gate on exported JSON. The owner connects any missing credentials in the n8n UI
+when a workflow first needs them.
 
-1. **WF4 Error Handler.** Error Trigger → format → Telegram. Test by deploying a
-   throwaway workflow with a failing node and WF4 set as its error workflow.
-2. **WF0 Upsert Item.** Execute Workflow Trigger → Notion query by `Source ID` → IF →
-   create or update → return page URL. Test: run twice with the same input, one row.
-3. **WF5 Decide.** Config → Switch on `DECIDER_MODE` → Jev HTTP Request (timeout 10 s,
-   continue on fail) and/or Haiku HTTP Request (structured output) → `decide-merge.js` →
-   output decision plus `decided_by`, `confidence`, `shadow`. Build in `haiku` mode
-   first, add the Jev branch, then test `shadow` and `jev` with a fixture email.
-4. **WF2 Telegram Intake.** Telegram Trigger → chat-ID guard → `parse-forward.js` →
-   WF5 (priority and estimate only) → Haiku enrich → `normalize-item.js` → WF0 → bot
-   confirmation with the Notion link. First real end-to-end path; forward three
-   messages (plain, forwarded from a user, forwarded from a channel).
-5. **WF1 Email Triage.** Gmail Trigger (30 min, filtered query) → `prefilter.js` → Switch
-   (drop / linkedin / email) → WF5 → Switch on decision → FYI path (no further model
-   call, label `assistant/fyi`) or enrich → draft (Reply kind only) → WF0 → label
+**Execution budget.** n8n Cloud Starter allows 2 500 executions per month, and every
+sub-workflow call counts as one. With two sub-workflows per email the quota would be gone
+in two weeks, so WF0 Upsert and WF5 Decide are built once as node groups and reused inside
+WF1 and WF2 rather than as separate workflows; their logic stays in `src/` and is injected
+in both places. Expected use: at most 48 Gmail polls per day (a poll with no new mail is
+not an execution), a few Telegram messages per day, one digest per day, about 1 600 per
+month at the ceiling.
+
+1. **WF4 Error Handler.** Error Trigger → format → Telegram. Test by pointing a throwaway
+   workflow with a failing node at it.
+2. **WF2 Telegram Intake.** Telegram Trigger → chat-ID guard → `parse-forward.js` →
+   Decide (priority and estimate only) → Haiku enrich → `normalize-item.js` → Upsert →
+   bot confirmation with the Notion link. First real end-to-end path; forward three
+   messages (plain, forwarded from a user, forwarded from a channel). This is where the
+   Decide and Upsert node groups are built and tested: Decide in `haiku` mode first, then
+   the Jev branch, then `shadow` and `jev` with a fixture message; Upsert run twice with
+   the same input, one Notion row.
+3. **WF1 Email Triage.** Gmail Trigger (30 min, filtered query) → `prefilter.js` → Switch
+   (drop / linkedin / email) → Decide → Switch on decision → FYI path (no further model
+   call, label `assistant/fyi`) or enrich → draft (Reply kind only) → Upsert → label
    `assistant/processed`. Test with five seeded emails including one excluded sender
-   (must never reach WF5, assert in the execution log) and one LinkedIn InMail.
-6. **WF3 Morning Planner.** Schedule (07:30, weekdays per config) → Notion open items and
+   (must never reach a model, assert in the execution log) and one LinkedIn InMail.
+4. **WF3 Morning Planner.** Schedule (07:30, weekdays per config) → Notion open items and
    FYI since last digest → Calendar today → `capacity.js` → `candidates.js` → Sonnet
    planner (structured) → `feasibility.js` → Notion digest page → `digest-format.js` →
    Telegram (chunked) → close FYI items. Test with a fabricated overloaded day and assert
    the code trimmed the plan; test an empty day; test a day with a long digest.
 
-Exit criteria: all six active on the server; the no-send check passes on the exported
-JSON; the friction log has entries for anything that needed a workaround.
+Exit criteria: WF1, WF2 and WF3 published, WF4 set as their error workflow; the no-send
+check passes on the exported JSON; the friction log has entries for anything that needed a
+workaround.
 
 ## Phase 5 — Dry week [both]
 
@@ -174,4 +172,5 @@ diagram, the mode switch, cost figures from the first month and how to run it yo
 | Gmail draft does not thread for the recipient | Verify once in Phase 4 step 5; raw MIME fallback via Gmail API |
 | Too much FYI noise in the first digests | Lists grow during the dry week; FYI never triggers model calls, so cost is unaffected |
 | Workflow JSON drifts from the repo after UI edits | Build overwrites injected fields; `CLAUDE.md` rule: never edit prompts or code in the UI |
-| VPS loss | Nightly volume backup with a tested restore; encryption key in the backup |
+| Monthly execution quota runs out (workflows pause) | No sub-workflows; polling every 30 min; check usage in the n8n Cloud dashboard during the dry week |
+| Connector cannot do something (publish, settings, credentials) | Fallback is the public API with `N8N_HOST` / `N8N_API_KEY` in the environment settings |

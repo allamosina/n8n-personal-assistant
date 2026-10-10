@@ -7,6 +7,9 @@ feasibility check against the calendar.
 
 It never sends anything on the owner's behalf. It prepares, sorts and suggests.
 
+It runs on n8n Cloud, built and maintained from this repo through the n8n connector. The
+`infra/` folder is the self-hosted alternative (Docker Compose with n8n and Caddy).
+
 - Product: [`PRD.md`](PRD.md)
 - Design review and decisions: [`docs/PRD-REVIEW.md`](docs/PRD-REVIEW.md)
 - Build plan: [`docs/PLAN.md`](docs/PLAN.md)
@@ -23,7 +26,7 @@ It never sends anything on the owner's behalf. It prepares, sorts and suggests.
 | `config/` | `config.example.json` (committed) and `config.local.json` (gitignored) |
 | `notion/schema.json` | Property definitions for the two Notion databases |
 | `scripts/` | Build, deploy, export, safety check |
-| `infra/` | Docker Compose (n8n + Caddy), install and backup scripts |
+| `infra/` | Self-hosting alternative: Docker Compose (n8n + Caddy), install and backup scripts |
 
 ## Commands
 
@@ -42,12 +45,11 @@ Notion connector, but the schema works with any Notion API client.
 ## How the pieces fit
 
 ```
-Gmail Trigger ──► WF1 Email Triage ──┐
-                                     ├──► WF5 Decide ──► WF0 Upsert Item ──► Notion "Assistant Inbox"
-Telegram bot ──► WF2 Telegram Intake ┘   (Jev | Haiku)                                │
-                                                                                      ▼
-Schedule 07:30 ──► WF3 Morning Planner ◄── Google Calendar (today)            reads open items
+Gmail Trigger ──► WF1 Email Triage ──┐  each: Decide (Jev | Haiku) ──► Upsert ──► Notion "Assistant Inbox"
+Telegram bot ──► WF2 Telegram Intake ┘                                                      │
+                                                                                            ▼
+Schedule 07:30 ──► WF3 Morning Planner ◄── Google Calendar (today)                  reads open items
                         │
-                        └──► Telegram digest + Notion "Daily digests" page
+                        └──► Telegram digest (split ≤4096) + Notion "Daily digests" page
 Any failure ──► WF4 Error Handler ──► Telegram alert
 ```

@@ -34,8 +34,8 @@ about 2k tokens each, 3 drafts per day, one planner call per day with ~10k input
 | Triage decisions (Haiku 5.5, every filtered email) | ≈ $0.40 |
 | Enrichment + drafts (Haiku 5.5, action items only) | ≈ $0.30 |
 | Morning planner (Sonnet 5.5, 1 call/day) | ≈ $1.00 |
-| VPS (Hetzner CX22 class) | ≈ €4–5 |
-| **Total** | **≈ €6–7**, against a €15 target |
+| Hosting | existing n8n Cloud subscription (a VPS would be ≈ €6–7 after the 2026 price rises) |
+| **Total on top of the subscription** | **≈ €2**, against a €15 target |
 
 **Consequence.** Jev's $0.042 per million input tokens saves cents, not euros. Its value
 is calibrated confidence and the experiment itself. The "cheap by default" principle holds
@@ -148,7 +148,15 @@ OpenRouter; test Russian and Czech in shadow mode".
 
 **Proposed change.** Section 7, WF2 step 3 and WF3 steps 1 and 5–6.
 
-## 6. Hosting with SQLite
+## 6. Hosting
+
+**Update, 2026-10-10:** the owner already pays for an n8n Cloud Starter subscription, which
+makes the VPS unnecessary: no server, DNS, HTTPS or backups to run, and Claude Code builds
+workflows through the n8n connector. The constraint that comes with it is the quota of 2 500
+executions per month; sub-workflow calls count, so WF0 and WF5 become reused node groups
+inside WF1 and WF2 (`docs/PLAN.md`, Phase 4). Hosting cost is covered by the existing
+subscription. The section below is kept as the self-hosting alternative.
+
 
 Compose becomes `n8n` + `caddy`. Environment: `GENERIC_TIMEZONE=Europe/Prague`,
 `WEBHOOK_URL=https://<host>/`, `N8N_ENCRYPTION_KEY` (generated once, in the backup),
