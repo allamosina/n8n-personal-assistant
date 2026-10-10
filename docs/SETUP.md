@@ -14,20 +14,30 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
       (claude.ai → Customize → Connectors). Claude Code sees the instance, its workflows and
       the names of its credentials, never the secrets.
 - [x] **Gmail credential** in n8n ("Gmail account", OAuth2).
-- [x] **Telegram credential** in n8n ("Telegram account"), so a bot already exists.
+- [x] **Gmail labels** `assistant/processed` and `assistant/fyi` created (2026-10-10); their
+      IDs are in `config/config.local.json` under `gmail.labels`.
+- [x] **Telegram bot** created in BotFather (2026-10-10). The first token was exposed and
+      revoked; the new one still has to go into n8n (see To do 1).
 - [x] **OpenRouter credential** in n8n ("OpenRouter account"). This can serve the Jev route
       (`decider.jev_base_url` set to OpenRouter) without a separate TypeSafe key.
 - [x] **Notion connector** in Claude, for creating the databases.
 - [x] **Notion databases created** (2026-10-10): top-level private page "Assistant" with
       "Assistant Inbox" and "Daily digests", schema as in `notion/schema.json`, plus two
       sample tasks. IDs are in `config/config.local.json`.
+- [x] **WF1 Email Triage created** in n8n through the connector (2026-10-10), Haiku-only
+      decider, unpublished. It waits for the "Anthropic" and "Notion" credentials (To do 2
+      and 5) before its test run and for your confirmation of the ignore and exclusion lists
+      before publishing.
 - [x] Hetzner server: created by mistake during setup. **Delete it** in the Hetzner console
       if not done yet, so it stops billing. Nothing on it is needed.
 
 ## To do
 
-### 1. Telegram chat ID (2 minutes)
+### 1. Telegram credential and chat ID (3 minutes)
 
+- [ ] In n8n: Credentials → Telegram API → paste the new bot token; name the credential
+      "Telegram bot". Delete or update the old "Telegram account" credential, whose token is
+      revoked.
 - [ ] Send any message to your bot in Telegram.
 - [ ] Open `https://api.telegram.org/bot<token>/getUpdates` in a browser, with the bot token
       from BotFather (`/mybots` → your bot → API Token). Find `"chat":{"id":123456789,...}`
@@ -54,20 +64,20 @@ own credential with calendar scopes.
       production": in Testing, Google expires the sign-in after 7 days and the workflows
       stop silently.
 
-### 4. Gmail labels (1 minute)
+### 4. Gmail labels
 
-- [ ] In Gmail: create the labels `assistant/processed` and `assistant/fyi`.
+Done, see above.
 
-### 5. Model access (decide with Claude Code in the build phase)
+### 5. Model access (3 minutes)
 
-n8n Cloud lists Anthropic and TypeSafe AI (Jev) among its built-in "gateway" credential
-types, billed through n8n credits. Claude Code checks during Phase 4 whether that path
-supports structured output; if it does, no API keys are needed at all.
+Decided 2026-10-10 (see `docs/NOTES.md`): Claude is called through the HTTP Request node,
+which needs an Anthropic API key. Jev uses n8n's own TypeSafe AI node, which is covered by
+n8n Cloud's gateway credits, so no Jev key is needed.
 
-- [ ] Fallback only: Anthropic API key with a monthly spend limit (about $10; expected use
-      is about $2). In n8n: Credentials → Header Auth, name `x-api-key`, call it "Anthropic".
-- [ ] Jev: the OpenRouter credential covers it. Keep `decider.mode` at `haiku` until the
-      shadow comparison in Phase 5.
+- [ ] Anthropic Console (console.anthropic.com) → API keys → create a key; set a monthly
+      spend limit of about $10 (expected use is about $2). In n8n: Credentials → Anthropic →
+      paste the key; name the credential "Anthropic".
+- [ ] Keep `decider.mode` at `haiku` until the shadow comparison in Phase 5.
 
 ### 6. Optional: n8n public API key
 

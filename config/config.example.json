@@ -73,5 +73,15 @@
   "language": {
     "digest": "ru",
     "titles": "ru"
+  },
+  "gmail": {
+    "$comment": "Label IDs from Gmail (Label_N), not names; the trigger query must exclude the processed label.",
+    "labels": {
+      "processed": "",
+      "fyi": ""
+    },
+    "trigger_query": "-label:assistant/processed -category:promotions -category:forums -category:social -from:me",
+    "poll_minutes": 30,
+    "max_results": 20
   }
 }

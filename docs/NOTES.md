@@ -10,6 +10,30 @@ Problem: what failed or would fail, with a source if any.
 Instead: what we did, and where it lives in the repo.
 ```
 
+## 2026-10-10 — Claude through HTTP Request, Jev through the TypeSafe AI node
+
+Tried: n8n's Anthropic node (`@n8n/n8n-nodes-langchain.anthropic`, text/message) so that
+n8n Cloud's gateway credits could pay for Claude without an API key.
+Problem: the node has no structured-output option (no `output_config.format`), and it
+sends `temperature`, `topP` and `topK` defaults that Haiku 5.5 rejects with a 400.
+Instead: HTTP Request node to `POST /v1/messages` with the body built by `src/claude.js`,
+authenticated with the predefined `anthropicApi` credential type (so an Anthropic API key
+is needed; see `docs/SETUP.md`). If a gateway-managed Anthropic credential turns out to be
+selectable on the HTTP Request node, use it and drop the key.
+
+Jev: n8n ships an official TypeSafe AI node (`@typesafe-ai/n8n-nodes-typesafe-ai.typeSafeAi`,
+operation `evaluate`, `questionsFormat: json`, simplified output = value + confidence per
+question), listed among the gateway-credit nodes. The Decide group uses it instead of a
+hand-built HTTP call; `src/decide-merge.js` builds the questions and reads the answers.
+
+## 2026-10-10 — Notion node v3 supports the status property type
+
+Tried: nothing yet; noted while reading the node definition.
+Finding: the Notion node v3 (`databasePage` create/update/getAll) has `statusValue` and a
+`status` filter type, so the old limitation is gone. `Status` stays a `select` because the
+databases already exist that way and a select is simpler to filter; revisit only if the
+owner wants Notion's status groups (To-do / In progress / Complete).
+
 ## 2026-10-10 — n8n Cloud instead of a VPS; sub-workflows count as executions
 
 Tried: self-hosted n8n on a Hetzner VPS as the PRD specifies. The server came up, but
