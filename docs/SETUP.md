@@ -18,6 +18,9 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
 - [x] **OpenRouter credential** in n8n ("OpenRouter account"). This can serve the Jev route
       (`decider.jev_base_url` set to OpenRouter) without a separate TypeSafe key.
 - [x] **Notion connector** in Claude, for creating the databases.
+- [x] **Notion databases created** (2026-10-10): top-level private page "Assistant" with
+      "Assistant Inbox" and "Daily digests", schema as in `notion/schema.json`, plus two
+      sample tasks. IDs are in `config/config.local.json`.
 - [x] Hetzner server: created by mistake during setup. **Delete it** in the Hetzner console
       if not done yet, so it stops billing. Nothing on it is needed.
 
@@ -31,15 +34,13 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
       and tell Claude Code the number. It goes into `telegram.owner_chat_id` in
       `config/config.local.json`, which is gitignored.
 
-### 2. Notion (5 minutes)
+### 2. Notion integration for n8n (3 minutes)
 
-- [ ] Pick or create a parent page in Notion for the two databases and tell Claude Code its
-      name. Claude Code creates "Assistant Inbox" and "Daily digests" there from
-      `notion/schema.json`.
-- [ ] notion.so/profile/integrations → New internal integration, capabilities: read, update,
-      insert content. Keep the token.
-- [ ] On the parent page: ⋯ → Connections → add the integration.
-- [ ] In n8n: Credentials → Notion API → paste the token.
+- [ ] notion.so/profile/integrations → New internal integration (name it "n8n assistant"),
+      capabilities: read, update, insert content. Keep the token.
+- [ ] Open the "Assistant" page in Notion: ⋯ (top right) → Connections → add "n8n
+      assistant". Both databases inherit the access.
+- [ ] In n8n: Credentials → Notion API → paste the token; name the credential "Notion".
 
 ### 3. Google Calendar credential (5 minutes)
 

@@ -11,8 +11,12 @@
     "owner_chat_id": "000000000"
   },
   "notion": {
+    "$comment": "database_id is what the n8n Notion node needs; data_source_id (collection) is what the Notion connector queries.",
+    "assistant_page_id": "",
     "inbox_database_id": "",
-    "digests_database_id": ""
+    "inbox_data_source_id": "",
+    "digests_database_id": "",
+    "digests_data_source_id": ""
   },
   "schedule": {
     "work_start": "09:00",
