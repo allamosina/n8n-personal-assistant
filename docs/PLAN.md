@@ -115,8 +115,10 @@ month at the ceiling.
 yet: WF1 was built first (23 nodes, Haiku-only Decide, unpublished, exported to
 `workflows/WF1-email-triage.json`). It waits for the "Anthropic" and "Notion" credentials
 for its test run. **2026-10-11:** the chat ID is known and WF4 Error Handler is built,
-published and set as WF1's error workflow (`workflows/WF4-error-handler.json`). WF2 is next;
-WF3 waits for the Google Calendar credential.
+published and set as WF1's error workflow (`workflows/WF4-error-handler.json`). WF2 Telegram
+Intake is built too (`workflows/WF2-telegram-intake.json`, Haiku-only Decide, Upsert group
+copied from WF1, unpublished). Both WF1 and WF2 wait for the Notion credential for their
+end-to-end tests; WF3 waits for the Google Calendar credential.
 
 1. **WF4 Error Handler.** Error Trigger → format → Telegram. Test by pointing a throwaway
    workflow with a failing node at it.
