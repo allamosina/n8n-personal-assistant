@@ -271,7 +271,7 @@
         "method": "POST",
         "url": "=https://api.notion.com/v1/databases/{{ $('Config').first().json.notion.inbox_database_id }}/query",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "notionApi",
+        "nodeCredentialType": "notionOAuth2Api",
         "sendHeaders": true,
         "specifyHeaders": "keypair",
         "headerParameters": {
@@ -292,7 +292,13 @@
       },
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 2000
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
     },
     {
       "name": "Exists?",
@@ -335,7 +341,7 @@
         "method": "PATCH",
         "url": "=https://api.notion.com/v1/pages/{{ $json.results[0].id }}",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "notionApi",
+        "nodeCredentialType": "notionOAuth2Api",
         "sendHeaders": true,
         "specifyHeaders": "keypair",
         "headerParameters": {
@@ -356,7 +362,13 @@
       },
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 2000
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
     },
     {
       "name": "Format confirmation",
@@ -413,7 +425,7 @@
         "method": "POST",
         "url": "https://api.notion.com/v1/pages",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "notionApi",
+        "nodeCredentialType": "notionOAuth2Api",
         "sendHeaders": true,
         "specifyHeaders": "keypair",
         "headerParameters": {
@@ -434,7 +446,13 @@
       },
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 2000
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
     }
   ],
   "connections": {

@@ -1,0 +1,443 @@
+{
+  "name": "WF3 Morning Planner",
+  "nodes": [
+    {
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 7 * * 1-5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Single source of settings and the planner prompt for this workflow. Other\n// Code nodes read $('Config').first().json; the build injects\n// config/config.local.json and prompts/planner.md here and nowhere else.\n// @inject config as CONFIG\n// @end-inject\n// @inject prompts/planner.md as PROMPT_PLANNER\n// @end-inject\nreturn [{ json: { ...CONFIG, prompts: { planner: PROMPT_PLANNER } } }];\n"
+      }
+    },
+    {
+      "name": "Fetch open items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $('Config').first().json.notion.inbox_database_id }}/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionOAuth2Api",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ filter: { or: [{ property: \"Status\", select: { equals: \"Inbox\" } }, { property: \"Status\", select: { equals: \"Planned\" } }, { property: \"Status\", select: { equals: \"In progress\" } }] }, page_size: 100 }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "name": "Fetch calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "resource": "event",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "primary"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $now.setZone($('Config').first().json.timezone).startOf('day').toISO() }}",
+        "timeMax": "={{ $now.setZone($('Config').first().json.timezone).endOf('day').toISO() }}",
+        "options": {
+          "singleEvents": true,
+          "orderBy": "startTime"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "name": "Prepare planner input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/normalize-item.js as normalize\n// @end-inject\n// @inject src/candidates.js as cand\n// @end-inject\n// @inject src/capacity.js as cap\n// @end-inject\n// @inject src/claude.js as claude\n// @end-inject\n// Deterministic part of the planning: free time, candidate ranking and the\n// bounded model input (at most max_planner_candidates tasks). One item out.\nconst PROMPT = CONFIG.prompts.planner;\nconst tz = CONFIG.timezone;\nconst now = $now.setZone(tz);\nconst today = now.toISODate();\nconst pages = $('Fetch open items').first().json.results || [];\nconst items = pages.map((p) => normalize.fromNotionPage(p));\n// Fetch calendar has \"always output data\": an empty day arrives as one empty item.\nconst events = $('Fetch calendar').all().map((i) => i.json).filter((e) => e && e.id);\nconst capacity = cap.computeCapacity({ date: today, timezone: tz, workStart: CONFIG.schedule.work_start, workEnd: CONFIG.schedule.work_end, events, bufferMin: CONFIG.schedule.meeting_buffer_min });\nconst { candidates, omitted } = cand.selectCandidates(items, { today, max: CONFIG.defaults.max_planner_candidates, defaultPriority: CONFIG.defaults.priority, defaultEstimate: CONFIG.defaults.estimate_min });\nconst fyi = cand.selectFyi(items);\nconst drafts = cand.selectDraftsWaiting(items);\nconst LANG = { ru: 'Russian', en: 'English', cs: 'Czech' };\nconst list = (arr, f) => (arr.length ? arr.map(f).join('\\n') : '-');\nconst vars = {\n  owner_name: CONFIG.owner.name,\n  owner_context: CONFIG.owner.context,\n  digest_language: LANG[CONFIG.language.digest] || CONFIG.language.digest,\n  today,\n  weekday: now.toFormat('cccc'),\n  free_minutes: capacity.free_minutes,\n  free_slots: list(capacity.free_slots, (s) => s.start + '-' + s.end + ' (' + s.minutes + ' min)'),\n  meetings: list(capacity.meetings, (m) => (m.all_day ? 'all day: ' + m.title : m.start + '-' + m.end + ': ' + m.title)),\n  omitted,\n  candidates: candidates.map(({ id, title, kind, priority, due, days_to_due, overdue, age_days, estimate_min }) => ({ id, title, kind, priority, due, days_to_due, overdue, age_days, estimate_min })),\n};\nreturn [{ json: { today, capacity, candidates, omitted, fyi, drafts, request: claude.buildClaudeRequest(PROMPT, vars, CONFIG.models) } }];\n"
+      }
+    },
+    {
+      "name": "Claude planner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "anthropicApi"
+        }
+      }
+    },
+    {
+      "name": "Build digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/claude.js as claude\n// @end-inject\n// @inject src/feasibility.js as feas\n// @end-inject\n// @inject src/digest-format.js as digest\n// @end-inject\n// The code, not the model, has the last word on the arithmetic: the plan is\n// trimmed to the free minutes, unknown IDs are dropped, then rendered twice.\nconst input = $('Prepare planner input').first().json;\nconst response = $input.first().json;\nconst lang = CONFIG.language.digest;\nconst L = digest.labels(lang);\nconst raw = claude.parseClaudeResponse(response);\nconst plan = feas.enforceFeasibility(raw, { candidates: input.candidates, freeMinutes: input.capacity.free_minutes, today: input.today, workDays: CONFIG.schedule.digest_days, overflowReason: L.overflow });\nconst model = digest.buildDigestSections({ date: input.today, capacity: input.capacity, plan, fyi: input.fyi, drafts: input.drafts, omitted: input.omitted }, lang);\nconst page = {\n  parent: { database_id: CONFIG.notion.digests_database_id },\n  properties: {\n    Name: { title: [{ type: 'text', text: { content: model.header } }] },\n    Date: { date: { start: input.today } },\n    'Free minutes': { number: plan.free_minutes },\n    'Planned minutes': { number: plan.planned_minutes },\n    Overloaded: { checkbox: plan.overloaded },\n  },\n  children: digest.renderNotionBlocks(model),\n};\nreturn [{ json: { today: input.today, messages: digest.renderTelegram(model), page, fyi_ids: input.fyi.map((f) => f.id), usage_planner: claude.usageOf(response) } }];\n"
+      }
+    },
+    {
+      "name": "Create digest page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1680,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionOAuth2Api",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.page) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "name": "One item per message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The Notion page is written first so the digest is kept even if Telegram\n// fails; the messages (already split under 4096 chars) come from Build digest.\nconst { messages } = $('Build digest').first().json;\nreturn messages.map((text, index) => ({ json: { text, index } }));\n"
+      }
+    },
+    {
+      "name": "Send digest",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2160,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Config').first().json.telegram.owner_chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "telegramApi"
+        }
+      }
+    },
+    {
+      "name": "FYI to close",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Runs only after the digest was delivered. Closing FYI items is the one\n// automatic status change the rules allow (hard rule 3). No items: the run ends.\nconst { fyi_ids } = $('Build digest').first().json;\nreturn fyi_ids.map((id) => ({ json: { id } }));\n"
+      }
+    },
+    {
+      "name": "Close FYI item",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2640,
+        300
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionOAuth2Api",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { Status: { select: { name: \"Done\" } } } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch open items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch open items": {
+      "main": [
+        [
+          {
+            "node": "Fetch calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch calendar": {
+      "main": [
+        [
+          {
+            "node": "Prepare planner input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare planner input": {
+      "main": [
+        [
+          {
+            "node": "Claude planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude planner": {
+      "main": [
+        [
+          {
+            "node": "Build digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build digest": {
+      "main": [
+        [
+          {
+            "node": "Create digest page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create digest page": {
+      "main": [
+        [
+          {
+            "node": "One item per message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One item per message": {
+      "main": [
+        [
+          {
+            "node": "Send digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send digest": {
+      "main": [
+        [
+          {
+            "node": "FYI to close",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FYI to close": {
+      "main": [
+        [
+          {
+            "node": "Close FYI item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Prague"
+  }
+}

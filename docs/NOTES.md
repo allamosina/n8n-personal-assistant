@@ -10,6 +10,26 @@ Problem: what failed or would fail, with a source if any.
 Instead: what we did, and where it lives in the repo.
 ```
 
+## 2026-10-11 — Credential types on n8n Cloud, and an empty calendar day
+
+Notion: n8n offers three Notion credential types. The owner's first click produced
+"Notion MCP OAuth2" (for the Notion MCP tool node), which the HTTP Request node cannot use.
+The internal-integration route (Notion API type) needs a token copied from Notion, so the
+**Notion OAuth2 API** type ("Connect my account", pick the "Assistant" page) was used
+instead; the HTTP Request nodes take it as `nodeCredentialType: notionOAuth2Api`. Switching
+is one `setNodeParameter` + `setNodeCredential` per node; the committed JSON records the type.
+
+Credential auto-assignment: `create_workflow_from_code` attaches credentials to app nodes
+but skips HTTP Request nodes, so their credentials are written explicitly in the SDK code
+or set afterwards with `setNodeCredential`.
+
+Google Calendar in WF3: a day without events makes the Calendar node output zero items,
+which would stop the workflow before the planner runs. The node has "Always output data"
+on, and `Prepare planner input` drops the empty placeholder item (`filter(e => e && e.id)`).
+
+Error workflows cannot be tested with a real error through the connector (manual runs do not
+trigger them); WF4 was tested with pinned Error Trigger data instead.
+
 ## 2026-10-10 — Export through the connector instead of the public API
 
 Tried: `npm run export` against the n8n Cloud instance from the Claude Code container.
