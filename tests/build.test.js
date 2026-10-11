@@ -30,6 +30,16 @@ test('prompt parser rejects malformed files', () => {
   assert.throws(() => assertStrictSchema({ type: 'object', properties: { x: { type: 'object', properties: {} } }, required: ['x'], additionalProperties: false }, 'f'), /\$\.x must set additionalProperties/);
 });
 
+test('schemas express nullable enums with anyOf, never enum on a type array', () => {
+  const bad = { type: 'object', properties: { k: { type: ['string', 'null'], enum: ['a', null] } }, required: ['k'], additionalProperties: false };
+  assert.throws(() => assertStrictSchema(bad, 'f'), /\$\.k combines enum with a type array/);
+  const good = { type: 'object', properties: { k: { anyOf: [{ type: 'string', enum: ['a'] }, { type: 'null' }] } }, required: ['k'], additionalProperties: false };
+  assert.doesNotThrow(() => assertStrictSchema(good, 'f'));
+  const nestedBad = { type: 'object', properties: { k: { anyOf: [{ type: 'object', properties: {} }] } }, required: ['k'], additionalProperties: false };
+  assert.throws(() => assertStrictSchema(nestedBad, 'f'), /\$\.k\.anyOf\[0\] must set additionalProperties/);
+  for (const f of promptFiles) assert.doesNotThrow(() => parsePrompt(read('prompts/' + f), f));
+});
+
 test('every src module injects into a self-contained IIFE that runs without imports', () => {
   for (const f of srcFiles) {
     const iife = moduleToIife(read('src/' + f), f);

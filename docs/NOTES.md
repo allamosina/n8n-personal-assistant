@@ -10,6 +10,20 @@ Problem: what failed or would fail, with a source if any.
 Instead: what we did, and where it lives in the repo.
 ```
 
+## 2026-10-11 — Anthropic structured output rejects `enum` on a nullable type array
+
+Tried: nullable enums in the prompt schemas as `"type": ["string", "null"], "enum": [...,
+null]`, which is valid JSON Schema.
+Problem: the first production run of WF1 (execution 42) failed at "Claude decide" with
+HTTP 400 `output_config.format.schema: Invalid schema: Enum value 'email_reply' does not
+match declared type '['string', 'null']'`. The API's schema validator does not accept
+`enum` combined with a type array. Nothing before the call was wrong, and WF4 reported it.
+Instead: nullable fields use `anyOf: [{ "type": ..., "enum": [...] }, { "type": "null" }]`
+(`prompts/decide.md`, `prompts/enrich.md`); `assertStrictSchema` in
+`scripts/lib/prompts.mjs` now rejects the failing shape so `npm test` and `npm run build`
+catch it. Only the `Config` node bodies changed on the instance (re-uploaded and
+republished for WF1 and WF2).
+
 ## 2026-10-11 — Credential types on n8n Cloud, and an empty calendar day
 
 Notion: n8n offers three Notion credential types. The owner's first click produced
