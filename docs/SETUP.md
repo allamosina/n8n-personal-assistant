@@ -39,6 +39,11 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
       A forward or note sent to the bot becomes a task; anything from another chat is
       dropped; senders on `filters.exclude_chats` never reach a model. Waits for the Notion
       credential (To do 2) and the new bot token (To do 1) before its test and publishing.
+- [x] **Notion credential** in n8n ("Notion account 2", Notion OAuth2, 2026-10-11),
+      attached to the Notion nodes of WF1, WF2 and WF3.
+- [x] **WF3 Morning Planner created** (2026-10-11), unpublished, WF4 as its error workflow,
+      weekdays 07:30 Prague time. Waits for the Google Calendar credential (To do 3) and the
+      new bot token (To do 1).
 - [x] Hetzner server: created by mistake during setup. **Delete it** in the Hetzner console
       if not done yet, so it stops billing. Nothing on it is needed.
 
@@ -50,19 +55,10 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
       Token with the new bot token from BotFather → Save. Edit this credential rather than
       creating a new one: WF4 already points at it.
 
-### 2. Notion credential for n8n (1 minute)
+### 2. Notion credential for n8n
 
-n8n offers three Notion credential types. "Notion MCP OAuth2" (what the first attempt
-created as "Notion account") is for n8n's Notion MCP tool and does not work here. Easiest:
-
-- [ ] In n8n: Credentials → Create credential → search "Notion" → choose **Notion OAuth2
-      API** → Connect my account → in the Notion window click "Select pages", tick
-      "Assistant", Allow access → rename the credential to "Notion" → Save.
-
-Alternative without OAuth: **Notion API** with the secret of your own integration
-(notion.so/profile/integrations → New integration "n8n assistant", Internal; then on the
-"Assistant" page ⋯ → Connections → Connect to → "n8n assistant"; paste the `ntn_` secret
-into the credential's API Key). Claude Code points the workflows at whichever type exists.
+Done (2026-10-11) as "Notion account 2", type Notion OAuth2 API. The unused "Notion account"
+(Notion MCP OAuth2 type, for n8n's Notion MCP tool) can be deleted.
 
 ### 3. Google Calendar credential (5 minutes)
 
