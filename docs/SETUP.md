@@ -59,6 +59,12 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
 Done (2026-10-11) as "Notion account 2", type Notion OAuth2 API. The unused "Notion account"
 (Notion MCP OAuth2 type, for n8n's Notion MCP tool) can be deleted.
 
+- [ ] **Allow the credential in HTTP Request nodes** (found 2026-10-11, execution 46: "This
+      credential is configured to prevent use within an HTTP Request or GraphQL node"). In
+      n8n: Credentials → open "Notion account 2" → field **Allowed HTTP Request Domains** →
+      choose **Specific Domains** and enter `api.notion.com` (or choose All) → Save. The
+      Notion steps of WF1, WF2 and WF3 are HTTP Request nodes and need this.
+
 ### 3. Google Calendar credential (5 minutes)
 
 The Gmail credential exists, so a Google Cloud OAuth client exists too. Calendar needs its
