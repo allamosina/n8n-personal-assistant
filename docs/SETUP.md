@@ -44,19 +44,19 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
       Token with the new bot token from BotFather → Save. Edit this credential rather than
       creating a new one: WF4 already points at it.
 
-### 2. Notion integration for n8n (3 minutes)
+### 2. Notion credential for n8n (1 minute)
 
-The credential type matters. "Notion account" created with the sign-in button is the
-**Notion MCP** type and does not work for the workflows. They need **Notion API**, which
-takes the secret of your own integration:
+n8n offers three Notion credential types. "Notion MCP OAuth2" (what the first attempt
+created as "Notion account") is for n8n's Notion MCP tool and does not work here. Easiest:
 
-- [ ] notion.so/profile/integrations → New integration, name "n8n assistant", type
-      Internal, Save. Show and copy the Internal Integration Secret (starts with `ntn_`).
-- [ ] Open the "Assistant" page in Notion: ⋯ (top right) → Connections → Connect to → "n8n
-      assistant". Both databases inherit the access.
-- [ ] In n8n: Credentials → Create credential → search "Notion" → choose **Notion API** →
-      paste the secret into API Key → rename the credential to "Notion" → Save. The unused
-      "Notion account" credential can be deleted.
+- [ ] In n8n: Credentials → Create credential → search "Notion" → choose **Notion OAuth2
+      API** → Connect my account → in the Notion window click "Select pages", tick
+      "Assistant", Allow access → rename the credential to "Notion" → Save.
+
+Alternative without OAuth: **Notion API** with the secret of your own integration
+(notion.so/profile/integrations → New integration "n8n assistant", Internal; then on the
+"Assistant" page ⋯ → Connections → Connect to → "n8n assistant"; paste the `ntn_` secret
+into the credential's API Key). Claude Code points the workflows at whichever type exists.
 
 ### 3. Google Calendar credential (5 minutes)
 
