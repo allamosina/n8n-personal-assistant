@@ -43,9 +43,9 @@ Received: {{received}}
   "type": "object",
   "properties": {
     "action_needed": { "type": "boolean" },
-    "action_type": { "type": ["string", "null"], "enum": ["email_reply", "other", null] },
-    "priority": { "type": ["string", "null"], "enum": ["P1", "P2", "P3", null] },
-    "estimate_min": { "type": ["integer", "null"], "enum": [15, 30, 60, 120, null] },
+    "action_type": { "anyOf": [{ "type": "string", "enum": ["email_reply", "other"] }, { "type": "null" }] },
+    "priority": { "anyOf": [{ "type": "string", "enum": ["P1", "P2", "P3"] }, { "type": "null" }] },
+    "estimate_min": { "anyOf": [{ "type": "integer", "enum": [15, 30, 60, 120] }, { "type": "null" }] },
     "confidence": { "type": "number" }
   },
   "required": ["action_needed", "action_type", "priority", "estimate_min", "confidence"],

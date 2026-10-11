@@ -40,7 +40,7 @@ Owner's note: {{note}}
   "properties": {
     "title": { "type": "string" },
     "summary": { "type": "string" },
-    "due": { "type": ["string", "null"] },
+    "due": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
     "priority_reason": { "type": "string" }
   },
   "required": ["title", "summary", "due", "priority_reason"],

@@ -12,10 +12,19 @@ function fencedJson(section, file, name) {
   }
 }
 
-/** Every object schema must be closed and list all properties as required. */
+/**
+ * Every object schema must be closed and list all properties as required.
+ * Nullable fields use anyOf: the Anthropic structured-output validator rejects
+ * `enum` combined with a type array such as ["string", "null"] (seen live,
+ * 2026-10-11: "Enum value 'email_reply' does not match declared type").
+ */
 export function assertStrictSchema(schema, file, path = '$') {
   if (!schema || typeof schema !== 'object') return;
   const types = [].concat(schema.type || []);
+  if (Array.isArray(schema.type) && schema.enum) {
+    throw new Error(`${file}: ${path} combines enum with a type array; use anyOf: [{ type, enum }, { type: "null" }]`);
+  }
+  if (Array.isArray(schema.anyOf)) schema.anyOf.forEach((s, i) => assertStrictSchema(s, file, `${path}.anyOf[${i}]`));
   if (types.includes('object')) {
     if (schema.additionalProperties !== false) throw new Error(`${file}: ${path} must set additionalProperties: false`);
     const props = Object.keys(schema.properties || {});
