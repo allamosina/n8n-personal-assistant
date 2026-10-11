@@ -33,6 +33,12 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
       WF1. It sends one Telegram message per failed execution through the "Telegram account"
       credential, so it starts working as soon as that credential holds the new bot token
       (To do 1).
+- [x] **Anthropic credential** in n8n ("Anthropic account", 2026-10-11), attached to the
+      Claude nodes of WF1 and WF2.
+- [x] **WF2 Telegram Intake created** (2026-10-11), unpublished, WF4 as its error workflow.
+      A forward or note sent to the bot becomes a task; anything from another chat is
+      dropped; senders on `filters.exclude_chats` never reach a model. Waits for the Notion
+      credential (To do 2) and the new bot token (To do 1) before its test and publishing.
 - [x] Hetzner server: created by mistake during setup. **Delete it** in the Hetzner console
       if not done yet, so it stops billing. Nothing on it is needed.
 
@@ -80,9 +86,10 @@ Decided 2026-10-10 (see `docs/NOTES.md`): Claude is called through the HTTP Requ
 which needs an Anthropic API key. Jev uses n8n's own TypeSafe AI node, which is covered by
 n8n Cloud's gateway credits, so no Jev key is needed.
 
-- [ ] Anthropic Console (console.anthropic.com) → API keys → create a key; set a monthly
-      spend limit of about $10 (expected use is about $2). In n8n: Credentials → Anthropic →
-      paste the key; name the credential "Anthropic".
+- [x] Anthropic Console (console.anthropic.com) → API keys → create a key. In n8n:
+      Credentials → Anthropic → paste the key. Done 2026-10-11 as "Anthropic account".
+- [ ] In the Anthropic Console set a monthly spend limit of about $10 (expected use is
+      about $2), if not done yet.
 - [ ] Keep `decider.mode` at `haiku` until the shadow comparison in Phase 5.
 
 ### 6. Optional: n8n public API key

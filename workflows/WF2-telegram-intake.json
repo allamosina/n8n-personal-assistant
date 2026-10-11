@@ -1,0 +1,635 @@
+{
+  "name": "WF2 Telegram Intake",
+  "nodes": [
+    {
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "telegramApi"
+        }
+      }
+    },
+    {
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Single source of settings and prompts for this workflow. Other Code nodes\n// read $('Config').first().json; the build injects config/config.local.json\n// and prompts/*.md here and nowhere else.\n// @inject config as CONFIG\n// @end-inject\n// @inject prompts/decide.md as PROMPT_DECIDE\n// @end-inject\n// @inject prompts/enrich.md as PROMPT_ENRICH\n// @end-inject\nreturn [{ json: { ...CONFIG, prompts: { decide: PROMPT_DECIDE, enrich: PROMPT_ENRICH } } }];\n"
+      }
+    },
+    {
+      "name": "Guard and parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/parse-forward.js as tg\n// @end-inject\n// Owner-only intake (hard rule 2) and the privacy list before any model call\n// (hard rule 7). Reads the trigger directly: Config sits between the trigger and\n// this node. Anything not from the owner's private chat is dropped silently.\nconst out = [];\nfor (const u of $('Telegram Trigger').all()) {\n  const m = u.json.message;\n  if (!m || !tg.isOwner(m, CONFIG.telegram.owner_chat_id)) continue;\n  const p = tg.parseTelegramMessage(m);\n  if (!p.text) continue;\n  const base = { message_id: m.message_id, chat_id: String(m.chat.id), source_id: p.source_id, source: 'Telegram', channel: 'telegram' };\n  if (m.forward_origin && tg.isExcludedOrigin(m.forward_origin, CONFIG.filters.exclude_chats)) {\n    out.push({ json: { ...base, excluded: true }, pairedItem: { item: 0 } });\n    continue;\n  }\n  const firstLine = p.text.split('\\n')[0].trim();\n  out.push({\n    json: {\n      ...base,\n      excluded: false,\n      kind_hint: p.kind,\n      from: p.sender || CONFIG.owner.name,\n      subject: firstLine.length > 80 ? firstLine.slice(0, 79) + '…' : firstLine,\n      received: p.original_date || new Date(m.date * 1000).toISOString(),\n      body: p.text,\n      link: p.link,\n    },\n    pairedItem: { item: 0 },\n  });\n}\nreturn out;\n"
+      }
+    },
+    {
+      "name": "Excluded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.excluded }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "name": "Skipped notice",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        960,
+        120
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Config').first().json.telegram.owner_chat_id }}",
+        "text": "={{ $('Config').first().json.language.digest === 'ru' ? '⛔ Пропущено: отправитель в списке исключений, в модель не отправлено.' : '⛔ Skipped: the sender is on the exclusion list, nothing was sent to a model.' }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "telegramApi"
+        }
+      }
+    },
+    {
+      "name": "Build decide request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/claude.js as claude\n// @end-inject\nconst PROMPT = CONFIG.prompts.decide;\nconst e = $input.item.json;\nconst vars = {\n  owner_name: CONFIG.owner.name,\n  owner_context: CONFIG.owner.context,\n  channel: e.channel,\n  channel_guidance: PROMPT.guidance[e.channel] || '',\n  sender: e.from,\n  subject: e.subject,\n  received: e.received,\n  body: e.body,\n};\nreturn { json: { ...e, request: claude.buildClaudeRequest(PROMPT, vars, CONFIG.models) } };\n"
+      }
+    },
+    {
+      "name": "Claude decide",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1200,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "anthropicApi"
+        }
+      }
+    },
+    {
+      "name": "Parse decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/claude.js as claude\n// @end-inject\n// @inject src/decide-merge.js as decide\n// @end-inject\n// The owner forwarded this on purpose, so action is always needed; Haiku supplies\n// the type, priority and estimate. DECIDER_MODE is forced to \"haiku\" until the Jev\n// branch exists in this workflow.\nconst msg = $('Build decide request').item.json;\nconst response = $input.item.json;\nconst haiku = decide.parseHaikuDecision(claude.parseClaudeResponse(response));\nconst decision = decide.mergeDecision({ mode: 'haiku', threshold: CONFIG.decider.confidence_threshold, haiku, channel: 'telegram', forceActionNeeded: true });\nconst { request, ...rest } = msg;\nreturn { json: { ...rest, ...decision, usage_decide: claude.usageOf(response) } };\n"
+      }
+    },
+    {
+      "name": "Build enrich request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/claude.js as claude\n// @end-inject\nconst PROMPT = CONFIG.prompts.enrich;\nconst LANG = { ru: 'Russian', en: 'English', cs: 'Czech' };\nconst e = $input.item.json;\nconst vars = {\n  owner_name: CONFIG.owner.name,\n  owner_context: CONFIG.owner.context,\n  title_language: LANG[CONFIG.language.titles] || CONFIG.language.titles,\n  today: $now.setZone(CONFIG.timezone).toISODate(),\n  channel: e.channel,\n  action_type: e.action_type,\n  priority: e.priority,\n  sender: e.from,\n  subject: e.subject,\n  note: '',\n  body: e.body,\n};\nreturn { json: { ...e, request: claude.buildClaudeRequest(PROMPT, vars, CONFIG.models) } };\n"
+      }
+    },
+    {
+      "name": "Claude enrich",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1920,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "anthropicApi"
+        }
+      }
+    },
+    {
+      "name": "Parse enrich",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// @inject src/claude.js as claude\n// @end-inject\nconst e = $('Build enrich request').item.json;\nconst response = $input.item.json;\nconst r = claude.parseClaudeResponse(response);\nconst { request, ...rest } = e;\nreturn {\n  json: {\n    ...rest,\n    kind: e.action_type === 'email_reply' ? 'Reply' : 'Action',\n    title: r.title,\n    summary: r.summary,\n    due: r.due,\n    priority_reason: r.priority_reason,\n    sender: e.from,\n    shadow_decision: e.shadow || null,\n    usage_enrich: claude.usageOf(response),\n  },\n};\n"
+      }
+    },
+    {
+      "name": "Normalize item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/normalize-item.js as normalize\n// @end-inject\n// Everything after this node reads $('Normalize item').item.json, so the Notion\n// nodes stay identical to WF1's.\nconst e = $input.item.json;\nconst item = normalize.normalizeItem(e, CONFIG.defaults);\nreturn {\n  json: {\n    item,\n    source_id: item.source_id,\n    message_id: e.message_id,\n    notion_properties: normalize.toNotionProperties(item),\n    notion_update_properties: normalize.toNotionUpdateProperties(item),\n  },\n};\n"
+      }
+    },
+    {
+      "name": "Find existing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2640,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.notion.com/v1/databases/{{ $('Config').first().json.notion.inbox_database_id }}/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ filter: { property: \"Source ID\", rich_text: { equals: $json.source_id } }, page_size: 1 }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "name": "Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2880,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.results.length }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "name": "Update item",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3120,
+        300
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.results[0].id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: $('Normalize item').item.json.notion_update_properties }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "name": "Format confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        400
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Short confirmation with the Notion link. Input is the page from Create item\n// or Update item; the item itself comes from Normalize item (SDK rule 7).\nconst CONFIG = $('Config').first().json;\nconst page = $input.item.json;\nconst { item } = $('Normalize item').item.json;\nconst created = ($('Exists?').item.json.results || []).length === 0;\nconst ru = CONFIG.language.digest === 'ru';\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst head = created ? (ru ? '✅ Задача создана' : '✅ Task created') : (ru ? '🔁 Уже была в Notion, обновлена' : '🔁 Already in Notion, updated');\nconst meta = [item.priority, item.estimate_min ? item.estimate_min + (ru ? ' мин' : ' min') : null, item.due ? (ru ? 'до ' : 'due ') + item.due : null].filter(Boolean).join(' · ');\nconst text = [head, '<b>' + esc(item.title) + '</b>', meta, page.url].filter(Boolean).join('\\n');\nreturn { json: { text } };\n"
+      }
+    },
+    {
+      "name": "Confirm to owner",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3600,
+        400
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Config').first().json.telegram.owner_chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "telegramApi"
+        }
+      }
+    },
+    {
+      "name": "Create item",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3120,
+        500
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ parent: { database_id: $('Config').first().json.notion.inbox_database_id }, properties: $('Normalize item').item.json.notion_properties }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Guard and parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard and parse": {
+      "main": [
+        [
+          {
+            "node": "Excluded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Excluded?": {
+      "main": [
+        [
+          {
+            "node": "Skipped notice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build decide request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build decide request": {
+      "main": [
+        [
+          {
+            "node": "Claude decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude decide": {
+      "main": [
+        [
+          {
+            "node": "Parse decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse decision": {
+      "main": [
+        [
+          {
+            "node": "Build enrich request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build enrich request": {
+      "main": [
+        [
+          {
+            "node": "Claude enrich",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude enrich": {
+      "main": [
+        [
+          {
+            "node": "Parse enrich",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse enrich": {
+      "main": [
+        [
+          {
+            "node": "Normalize item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize item": {
+      "main": [
+        [
+          {
+            "node": "Find existing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find existing": {
+      "main": [
+        [
+          {
+            "node": "Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Exists?": {
+      "main": [
+        [
+          {
+            "node": "Update item",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update item": {
+      "main": [
+        [
+          {
+            "node": "Format confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format confirmation": {
+      "main": [
+        [
+          {
+            "node": "Confirm to owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create item": {
+      "main": [
+        [
+          {
+            "node": "Format confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
