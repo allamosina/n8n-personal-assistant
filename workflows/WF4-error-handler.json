@@ -1,0 +1,110 @@
+{
+  "name": "WF4 Error Handler",
+  "nodes": [
+    {
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Single source of settings for this workflow. The build injects\n// config/config.local.json here and nowhere else.\n// @inject config as CONFIG\n// @end-inject\nreturn [{ json: CONFIG }];\n"
+      }
+    },
+    {
+      "name": "Format error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// One Telegram message per failed execution. Error Trigger payload:\n// { execution: { id, url, error: { message }, lastNodeExecuted, mode }, workflow: { id, name } }\n// or, for a failing trigger node: { trigger: { error: { message }, mode }, workflow }.\nconst CONFIG = $('Config').first().json;\nconst d = $('Error Trigger').first().json;\nconst ru = CONFIG.language.digest === 'ru';\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst wf = d.workflow || {};\nconst ex = d.execution || {};\nconst err = ex.error || d.trigger?.error || {};\nconst nodeName = ex.lastNodeExecuted || (d.trigger ? 'trigger' : null);\nconst when = $now.setZone(CONFIG.timezone).toFormat('yyyy-LL-dd HH:mm');\nconst lines = [\n  '\\u26a0\\ufe0f <b>' + esc(wf.name || 'n8n') + '</b>',\n  nodeName ? (ru ? 'Узел: ' : 'Node: ') + esc(nodeName) : '',\n  (ru ? 'Ошибка: ' : 'Error: ') + esc(err.message || (ru ? 'без описания' : 'no message')),\n  ex.url ? (ru ? 'Запуск: ' : 'Execution: ') + esc(ex.url) : '',\n  (ru ? 'Время: ' : 'Time: ') + when,\n].filter(Boolean);\nlet text = lines.join('\\n');\nif (text.length > 3500) text = text.slice(0, 3499) + '…';\nreturn [{ json: { text } }];\n"
+      }
+    },
+    {
+      "name": "Notify owner",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Config').first().json.telegram.owner_chat_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "telegramApi"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Format error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format error": {
+      "main": [
+        [
+          {
+            "node": "Notify owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

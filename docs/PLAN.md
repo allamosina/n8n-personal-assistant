@@ -114,7 +114,9 @@ month at the ceiling.
 **Status 2026-10-10.** The order was changed because the Telegram bot token was not in n8n
 yet: WF1 was built first (23 nodes, Haiku-only Decide, unpublished, exported to
 `workflows/WF1-email-triage.json`). It waits for the "Anthropic" and "Notion" credentials
-for its test run. WF4, WF2 and WF3 follow once the Telegram credential and chat ID exist.
+for its test run. **2026-10-11:** the chat ID is known and WF4 Error Handler is built,
+published and set as WF1's error workflow (`workflows/WF4-error-handler.json`). WF2 is next;
+WF3 waits for the Google Calendar credential.
 
 1. **WF4 Error Handler.** Error Trigger → format → Telegram. Test by pointing a throwaway
    workflow with a failing node at it.

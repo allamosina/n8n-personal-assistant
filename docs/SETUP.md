@@ -28,29 +28,35 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
       decider, unpublished. It waits for the "Anthropic" and "Notion" credentials (To do 2
       and 5) before its test run and for your confirmation of the ignore and exclusion lists
       before publishing.
+- [x] **Telegram chat ID** known (2026-10-11) and stored in `config/config.local.json`.
+- [x] **WF4 Error Handler created and published** (2026-10-11), set as the error workflow of
+      WF1. It sends one Telegram message per failed execution through the "Telegram account"
+      credential, so it starts working as soon as that credential holds the new bot token
+      (To do 1).
 - [x] Hetzner server: created by mistake during setup. **Delete it** in the Hetzner console
       if not done yet, so it stops billing. Nothing on it is needed.
 
 ## To do
 
-### 1. Telegram credential and chat ID (3 minutes)
+### 1. Telegram credential (1 minute)
 
-- [ ] In n8n: Credentials → Telegram API → paste the new bot token; name the credential
-      "Telegram bot". Delete or update the old "Telegram account" credential, whose token is
-      revoked.
-- [ ] Send any message to your bot in Telegram.
-- [ ] Open `https://api.telegram.org/bot<token>/getUpdates` in a browser, with the bot token
-      from BotFather (`/mybots` → your bot → API Token). Find `"chat":{"id":123456789,...}`
-      and tell Claude Code the number. It goes into `telegram.owner_chat_id` in
-      `config/config.local.json`, which is gitignored.
+- [ ] In n8n: Credentials → open the existing **"Telegram account"** → replace the Access
+      Token with the new bot token from BotFather → Save. Edit this credential rather than
+      creating a new one: WF4 already points at it.
 
 ### 2. Notion integration for n8n (3 minutes)
 
-- [ ] notion.so/profile/integrations → New internal integration (name it "n8n assistant"),
-      capabilities: read, update, insert content. Keep the token.
-- [ ] Open the "Assistant" page in Notion: ⋯ (top right) → Connections → add "n8n
+The credential type matters. "Notion account" created with the sign-in button is the
+**Notion MCP** type and does not work for the workflows. They need **Notion API**, which
+takes the secret of your own integration:
+
+- [ ] notion.so/profile/integrations → New integration, name "n8n assistant", type
+      Internal, Save. Show and copy the Internal Integration Secret (starts with `ntn_`).
+- [ ] Open the "Assistant" page in Notion: ⋯ (top right) → Connections → Connect to → "n8n
       assistant". Both databases inherit the access.
-- [ ] In n8n: Credentials → Notion API → paste the token; name the credential "Notion".
+- [ ] In n8n: Credentials → Create credential → search "Notion" → choose **Notion API** →
+      paste the secret into API Key → rename the credential to "Notion" → Save. The unused
+      "Notion account" credential can be deleted.
 
 ### 3. Google Calendar credential (5 minutes)
 
