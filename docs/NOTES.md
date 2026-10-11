@@ -10,6 +10,22 @@ Problem: what failed or would fail, with a source if any.
 Instead: what we did, and where it lives in the repo.
 ```
 
+## 2026-10-11 — Credentials are blocked in HTTP Request nodes by default
+
+Tried: the Notion OAuth2 credential on the HTTP Request nodes of the Upsert group (the Notion
+node had been ruled out for `status` and filter reasons, see below).
+Problem: the first full production run of WF1 (execution 46) reached "Find existing" and
+stopped with "This credential is configured to prevent use within an HTTP Request or
+GraphQL node". Every credential has an **Allowed HTTP Request Domains** setting (All /
+Specific Domains / None); new credentials default to None, and the connector cannot change
+it. The item itself was fine: decision, enrichment and the Gmail draft all worked.
+Instead: the owner sets the field to Specific Domains = `api.notion.com` (`docs/SETUP.md`
+§2). Fallback if n8n Cloud refuses it for OAuth credentials: switch the three Notion HTTP
+nodes to the native Notion node v3 (`databasePage` getAll with a `Source ID` filter, create,
+update). Noted for later: "Create draft" runs before the Upsert group, so a retry of a run
+that failed in Notion creates a second Gmail draft; the draft step should check "Find
+existing" first.
+
 ## 2026-10-11 — Anthropic structured output rejects `enum` on a nullable type array
 
 Tried: nullable enums in the prompt schemas as `"type": ["string", "null"], "enum": [...,
