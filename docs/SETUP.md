@@ -24,10 +24,9 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
 - [x] **Notion databases created** (2026-10-10): top-level private page "Assistant" with
       "Assistant Inbox" and "Daily digests", schema as in `notion/schema.json`, plus two
       sample tasks. IDs are in `config/config.local.json`.
-- [x] **WF1 Email Triage created** in n8n through the connector (2026-10-10), Haiku-only
-      decider, unpublished. It waits for the "Anthropic" and "Notion" credentials (To do 2
-      and 5) before its test run and for your confirmation of the ignore and exclusion lists
-      before publishing.
+- [x] **WF1 Email Triage created and published** (created 2026-10-10, published 2026-10-11
+      with empty ignore and exclusion lists on the owner's go-ahead). Haiku-only decider.
+      Polls Gmail every 30 minutes and processes only mail that arrives after activation.
 - [x] **Telegram chat ID** known (2026-10-11) and stored in `config/config.local.json`.
 - [x] **WF4 Error Handler created and published** (2026-10-11), set as the error workflow of
       WF1. It sends one Telegram message per failed execution through the "Telegram account"
@@ -35,10 +34,10 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
       (To do 1).
 - [x] **Anthropic credential** in n8n ("Anthropic account", 2026-10-11), attached to the
       Claude nodes of WF1 and WF2.
-- [x] **WF2 Telegram Intake created** (2026-10-11), unpublished, WF4 as its error workflow.
-      A forward or note sent to the bot becomes a task; anything from another chat is
-      dropped; senders on `filters.exclude_chats` never reach a model. Waits for the Notion
-      credential (To do 2) and the new bot token (To do 1) before its test and publishing.
+- [x] **WF2 Telegram Intake created and published** (2026-10-11), WF4 as its error
+      workflow. A forward or note sent to the bot becomes a task; anything from another chat
+      is dropped; senders on `filters.exclude_chats` never reach a model. Publishing
+      registered the bot webhook, so the "Telegram account" credential holds a working token.
 - [x] **Notion credential** in n8n ("Notion account 2", Notion OAuth2, 2026-10-11),
       attached to the Notion nodes of WF1, WF2 and WF3.
 - [x] **WF3 Morning Planner created** (2026-10-11), unpublished, WF4 as its error workflow,
