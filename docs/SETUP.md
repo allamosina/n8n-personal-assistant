@@ -46,6 +46,9 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
 - [x] **WF3b Morning Planner (agent) created** (2026-10-12), unpublished: the same digest
       built from n8n's AI Agent node with Notion and Calendar tools, for comparison with WF3.
       Two manual runs delivered the digest.
+- [x] **WF1b Email Triage (agent) created** (2026-10-12), unpublished: WF1 rebuilt from the AI
+      Agent node, native Gmail and Notion nodes and a per-email loop; pinned test passed.
+      Publish either WF1 or WF1b, never both.
 - [x] Hetzner server: created by mistake during setup. **Delete it** in the Hetzner console
       if not done yet, so it stops billing. Nothing on it is needed.
 
