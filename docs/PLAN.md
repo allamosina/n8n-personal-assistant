@@ -126,7 +126,9 @@ nullable enums, credential domain allow-list; see `docs/NOTES.md`). The Google C
 credential exists. At the owner's request a second planner, **WF3b Morning Planner
 (agent)**, was built from n8n's AI Agent node with Notion and Calendar tools
 (`workflows/WF3b-morning-planner-agent.json`) and test-run twice; which of WF3 / WF3b
-goes live is the owner's decision.
+goes live is the owner's decision. The same was done for the triage: **WF1b Email Triage
+(agent)** (`workflows/WF1b-email-triage-agent.json`), one agent call per email in a loop,
+native Gmail and Notion nodes; WF1 stays the published one until the owner decides.
 
 1. **WF4 Error Handler.** Error Trigger → format → Telegram. Test by pointing a throwaway
    workflow with a failing node at it.

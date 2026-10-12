@@ -10,6 +10,36 @@ Problem: what failed or would fail, with a source if any.
 Instead: what we did, and where it lives in the repo.
 ```
 
+## 2026-10-12 — WF1b: email triage rebuilt with n8n's own building blocks
+
+Tried (owner's request, after WF3b): a copy of WF1 Email Triage from native parts.
+`workflows/WF1b-email-triage-agent.json`, instance id `Hd0kMaVa4Cm1qZ26`, unpublished.
+Gmail Trigger → Config and Prefilter stay Code nodes (the privacy gate must run before any
+model call, hard rule 7, and the rules are tested in `src/prefilter.js`) → Loop Over Items
+(one email at a time) → one **AI Agent** call (Claude Haiku 5.5, adaptive thinking, low
+effort, Structured Output Parser) that decides, writes title/summary/due and, for replies,
+the draft text → Switch (FYI / Reply / Action) → native Gmail "create draft" → native
+Notion "get many" filtered on Source ID (Always Output Data) → If exists → native Notion
+update or create (two create nodes: task and FYI) → If due date → Notion update → Gmail
+"add labels" → back to the loop. 18 nodes, 3 groups.
+
+Findings (pinned test run, execution 59; no live Gmail poll yet):
+- One model call per email instead of up to three (decide, enrich, draft), so cheaper per
+  email; the price is one big prompt and one schema instead of three small, tested ones.
+- The per-email loop is needed because native "get many" nodes lose the item pairing on
+  empty results (zero rows for two emails would collapse into one placeholder). HTTP
+  Request nodes always return one response per input, which is why WF1 has no loop.
+- A Notion date property cannot be left empty in the create node, so the due date is a
+  separate If + update step. Priority and estimate get the config defaults in the
+  expression when the model returns an empty value.
+- `decide-merge.js` rules (Telegram always action, LinkedIn never email_reply) are prompt
+  text here, not code; `normalize-item.js` clipping of long titles/summaries is absent.
+- The Code node pinned test cannot exercise the agent, Gmail or Notion nodes; a real
+  verdict needs a published run on real mail.
+
+Decision pending, together with WF3 vs WF3b: only one triage workflow may be published,
+otherwise every email gets two Notion rows and two drafts.
+
 ## 2026-10-12 — WF3b: the planner rebuilt with n8n's own building blocks
 
 Tried (owner's request): a copy of WF3 Morning Planner made of native n8n parts instead of

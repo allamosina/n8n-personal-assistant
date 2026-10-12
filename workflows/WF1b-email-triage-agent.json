@@ -1,0 +1,885 @@
+{
+  "name": "WF1b Email Triage (agent)",
+  "nodes": [
+    {
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        224
+      ],
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 30,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "simple": false,
+        "maxResults": 20,
+        "filters": {
+          "q": "-label:assistant/processed -category:promotions -category:forums -category:social -from:me",
+          "readStatus": "both",
+          "includeSpamTrash": false,
+          "includeDrafts": false
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "gmailOAuth2"
+        }
+      }
+    },
+    {
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        224
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Settings for this workflow (labels, filter lists, defaults, owner). Other nodes read\n// $('Config').first().json; the build injects config/config.local.json here.\n// @inject config as CONFIG\n// @end-inject\nreturn [{ json: CONFIG }];\n"
+      }
+    },
+    {
+      "name": "Prefilter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        224
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/prefilter.js as prefilter\n// @end-inject\n// Rule pre-filter: excluded and ignored senders never reach a model (hard rule 7).\nconst out = [];\n$input.all().forEach((item, idx) => {\n  const m = item.json;\n  const fromRaw =\n    typeof m.from === 'string'\n      ? m.from\n      : (m.from && (m.from.text || (m.from.value && m.from.value[0] && m.from.value[0].address))) || (m.headers && m.headers.from) || '';\n  const subject = m.subject || (m.headers && m.headers.subject) || '';\n  const verdict = prefilter.prefilterEmail({ from: fromRaw, subject }, CONFIG.filters);\n  if (verdict.action === 'drop') return;\n  const raw = m.text || m.textAsHtml || m.snippet || '';\n  const body = prefilter.trimBody(String(raw).replace(/<[^>]+>/g, ' '), CONFIG.defaults.email_body_max_chars);\n  const channel = verdict.action;\n  out.push({\n    json: {\n      message_id: m.id,\n      thread_id: m.threadId,\n      source_id: (channel === 'linkedin' ? 'linkedin:' : 'gmail:') + m.id,\n      source: channel === 'linkedin' ? 'LinkedIn' : 'Gmail',\n      channel,\n      from: fromRaw,\n      address: verdict.address,\n      subject,\n      received: m.date || (m.headers && m.headers.date) || new Date().toISOString(),\n      body,\n      link: 'https://mail.google.com/mail/u/0/#inbox/' + m.threadId,\n    },\n    pairedItem: { item: idx },\n  });\n});\nreturn out;\n"
+      }
+    },
+    {
+      "name": "Triage agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        896,
+        112
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "=Today: {{ $now.setZone($('Config').first().json.timezone).toFormat('yyyy-LL-dd') }}\nChannel: {{ $json.channel }}\nFrom: {{ $json.from }}\nSubject: {{ $json.subject }}\nReceived: {{ $json.received }}\n\n{{ $json.body }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You sort incoming messages for {{ $('Config').first().json.owner.name }}. {{ $('Config').first().json.owner.context }}\n\nFor each message decide:\n1. action_needed: does it require anything from the owner? Replies a person is waiting for, deadlines, invitations, requests, forms, payments: true. Newsletters, notifications, receipts, confirmations with nothing to do, marketing: false. When unsure whether a human is waiting for an answer, prefer true: missing a reply costs more than one extra task.\n2. action_type: \"email_reply\" when the action is to answer this email by email (only for channel \"email\"; for \"linkedin\" the reply happens inside LinkedIn, so use \"other\"); \"other\" for any other action; \"none\" when no action is needed.\n3. priority: \"P1\" urgent and important (a person is waiting, interview logistics, a deadline within two days); \"P2\" important this week; \"P3\" can wait; \"\" when no action is needed.\n4. estimate_min: 15, 30, 60 or 120 minutes of the owner's time; 0 when no action is needed.\n5. confidence: your probability, from 0 to 1, that action_needed is correct.\n\nIf action is needed, also write the task:\n- title: a short imperative title in {{ $('Config').first().json.language.titles === 'ru' ? 'Russian' : 'English' }}, at most 80 characters, starting with a verb. For a reply on another channel start with the channel, for example \"Reply on LinkedIn: ...\".\n- summary: one or two sentences in the same language: who wants what, and by when if stated. Facts only from the message; no greetings, signatures or quoted history.\n- due: the deadline as YYYY-MM-DD if the message states or clearly implies it, resolved against today's date given in the message; otherwise \"\". Never invent a deadline.\n- priority_reason: one short line in the same language explaining the urgency.\nIf no action is needed, title, summary, due and priority_reason are \"\".\n\nIf action_type is \"email_reply\", also write draft_body: a reply draft in the language of the incoming email. Tone: {{ $('Config').first().json.owner.tone }} Short and specific: answer what was asked, propose a concrete next step, no filler. Never invent facts, dates, numbers, availability, prices or commitments; where information is missing insert a placeholder such as [[date?]] or [[confirm?]] and set draft_needs_input to true. Do not accept or decline offers, interviews or payments on the owner's behalf unless the email leaves only one sensible answer. Plain text, ending with the signature: {{ $('Config').first().json.owner.signature }}. Otherwise draft_body is \"\" and draft_needs_input is false.\n\nChannel notes. email: automated senders (no-reply addresses, notifications) rarely need action unless they carry a deadline or a form only the owner can complete. linkedin: notification emails, often only a snippet; InMails and recruiter messages that expect an answer need action, connection requests, reactions, post notifications and \"people you may know\" do not.\n\nYou only propose. The draft is saved as a Gmail draft for the owner to review; nothing is sent.",
+          "maxIterations": 3,
+          "enableStreaming": false
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "name": "Claude Haiku 5.5",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.6,
+      "position": [
+        912,
+        336
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "claude-haiku-5-5"
+        },
+        "options": {
+          "maxTokensToSample": 2048,
+          "thinkingMode": "adaptive",
+          "effort": "low"
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "anthropicApi"
+        }
+      }
+    },
+    {
+      "name": "Triage schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1040,
+        336
+      ],
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"action_needed\": {\n      \"type\": \"boolean\"\n    },\n    \"action_type\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"email_reply\",\n        \"other\",\n        \"none\"\n      ]\n    },\n    \"priority\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"P1\",\n        \"P2\",\n        \"P3\",\n        \"\"\n      ]\n    },\n    \"estimate_min\": {\n      \"type\": \"integer\",\n      \"enum\": [\n        0,\n        15,\n        30,\n        60,\n        120\n      ]\n    },\n    \"confidence\": {\n      \"type\": \"number\"\n    },\n    \"title\": {\n      \"type\": \"string\"\n    },\n    \"summary\": {\n      \"type\": \"string\"\n    },\n    \"due\": {\n      \"type\": \"string\"\n    },\n    \"priority_reason\": {\n      \"type\": \"string\"\n    },\n    \"draft_body\": {\n      \"type\": \"string\"\n    },\n    \"draft_needs_input\": {\n      \"type\": \"boolean\"\n    }\n  },\n  \"required\": [\n    \"action_needed\",\n    \"action_type\",\n    \"priority\",\n    \"estimate_min\",\n    \"confidence\",\n    \"title\",\n    \"summary\",\n    \"due\",\n    \"priority_reason\",\n    \"draft_body\",\n    \"draft_needs_input\"\n  ],\n  \"additionalProperties\": false\n}"
+      }
+    },
+    {
+      "name": "Route by decision",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1248,
+        96
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "renameOutput": true,
+              "outputKey": "FYI",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.action_needed }}",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "Reply",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.action_type }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "email_reply"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "Action",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.action_needed }}",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Unmatched",
+          "looseTypeValidation": true
+        }
+      }
+    },
+    {
+      "name": "Find existing",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        2048,
+        576
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "getAll",
+        "dataSourceId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "5f562346-dcc9-4e9c-9bd1-be241ee32b62"
+        },
+        "returnAll": false,
+        "limit": 1,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Source ID|rich_text",
+              "condition": "equals",
+              "richTextValue": "={{ $('Loop over emails').first().json.source_id }}"
+            }
+          ]
+        },
+        "simple": true
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "name": "Create Gmail draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        160
+      ],
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "={{ /^re:/i.test($('Loop over emails').first().json.subject || '') ? $('Loop over emails').first().json.subject : 'Re: ' + ($('Loop over emails').first().json.subject || '') }}",
+        "emailType": "text",
+        "message": "={{ $('Triage agent').first().json.output.draft_body }}",
+        "options": {
+          "threadId": "={{ $('Loop over emails').first().json.thread_id }}",
+          "sendTo": "={{ $('Loop over emails').first().json.address }}"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "gmailOAuth2"
+        }
+      }
+    },
+    {
+      "name": "Loop over emails",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        672,
+        224
+      ],
+      "parameters": {
+        "batchSize": 1
+      }
+    },
+    {
+      "name": "Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2272,
+        576
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "name": "Update item",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        3168,
+        304
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.id }}"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Summary|rich_text",
+              "textContent": "={{ $('Triage agent').first().json.output.summary }}"
+            },
+            {
+              "key": "Draft created|checkbox",
+              "checkboxValue": "={{ $('Triage agent').first().json.output.action_type === 'email_reply' }}"
+            }
+          ]
+        },
+        "simple": true
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "name": "Label processed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3392,
+        592
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "addLabels",
+        "messageId": "={{ $('Loop over emails').first().json.message_id }}",
+        "labelIds": "={{ $('Triage agent').first().json.output.action_needed ? [$('Config').first().json.gmail.labels.processed] : [$('Config').first().json.gmail.labels.processed, $('Config').first().json.gmail.labels.fyi] }}"
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "gmailOAuth2"
+        }
+      }
+    },
+    {
+      "name": "FYI?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2496,
+        672
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Triage agent').first().json.output.action_needed }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "false"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "name": "Create FYI item",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        3168,
+        496
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "create",
+        "dataSourceId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "5f562346-dcc9-4e9c-9bd1-be241ee32b62"
+        },
+        "title": "={{ $('Loop over emails').first().json.subject || '(no subject)' }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Kind|select",
+              "selectValue": "FYI"
+            },
+            {
+              "key": "Status|select",
+              "selectValue": "Inbox"
+            },
+            {
+              "key": "Source|select",
+              "selectValue": "={{ $('Loop over emails').first().json.source }}"
+            },
+            {
+              "key": "Source ID|rich_text",
+              "textContent": "={{ $('Loop over emails').first().json.source_id }}"
+            },
+            {
+              "key": "Link|url",
+              "urlValue": "={{ $('Loop over emails').first().json.link }}"
+            },
+            {
+              "key": "Sender|rich_text",
+              "textContent": "={{ $('Loop over emails').first().json.from }}"
+            },
+            {
+              "key": "Created by|select",
+              "selectValue": "Assistant"
+            },
+            {
+              "key": "Decided by|select",
+              "selectValue": "Haiku"
+            },
+            {
+              "key": "Confidence|number",
+              "numberValue": "={{ $('Triage agent').first().json.output.confidence }}"
+            }
+          ]
+        },
+        "simple": true
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "name": "Create task",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        2720,
+        768
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "create",
+        "dataSourceId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "5f562346-dcc9-4e9c-9bd1-be241ee32b62"
+        },
+        "title": "={{ $('Triage agent').first().json.output.title }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Kind|select",
+              "selectValue": "={{ $('Triage agent').first().json.output.action_type === 'email_reply' ? 'Reply' : 'Action' }}"
+            },
+            {
+              "key": "Status|select",
+              "selectValue": "Inbox"
+            },
+            {
+              "key": "Source|select",
+              "selectValue": "={{ $('Loop over emails').first().json.source }}"
+            },
+            {
+              "key": "Source ID|rich_text",
+              "textContent": "={{ $('Loop over emails').first().json.source_id }}"
+            },
+            {
+              "key": "Link|url",
+              "urlValue": "={{ $('Loop over emails').first().json.link }}"
+            },
+            {
+              "key": "Summary|rich_text",
+              "textContent": "={{ $('Triage agent').first().json.output.summary }}"
+            },
+            {
+              "key": "Sender|rich_text",
+              "textContent": "={{ $('Loop over emails').first().json.from }}"
+            },
+            {
+              "key": "Priority|select",
+              "selectValue": "={{ $('Triage agent').first().json.output.priority || $('Config').first().json.defaults.priority }}"
+            },
+            {
+              "key": "Priority reason|rich_text",
+              "textContent": "={{ $('Triage agent').first().json.output.priority_reason }}"
+            },
+            {
+              "key": "Estimate (min)|number",
+              "numberValue": "={{ $('Triage agent').first().json.output.estimate_min || $('Config').first().json.defaults.estimate_min }}"
+            },
+            {
+              "key": "Draft created|checkbox",
+              "checkboxValue": "={{ $('Triage agent').first().json.output.action_type === 'email_reply' }}"
+            },
+            {
+              "key": "Created by|select",
+              "selectValue": "Assistant"
+            },
+            {
+              "key": "Decided by|select",
+              "selectValue": "Haiku"
+            },
+            {
+              "key": "Confidence|number",
+              "numberValue": "={{ $('Triage agent').first().json.output.confidence }}"
+            }
+          ]
+        },
+        "simple": true
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "name": "Has due date?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2944,
+        768
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Triage agent').first().json.output.due }}",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              },
+              "rightValue": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "name": "Set due date",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        3168,
+        688
+      ],
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.id }}"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Due|date",
+              "includeTime": false,
+              "date": "={{ $('Triage agent').first().json.output.due }}"
+            }
+          ]
+        },
+        "simple": true
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prefilter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prefilter": {
+      "main": [
+        [
+          {
+            "node": "Loop over emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Triage agent": {
+      "main": [
+        [
+          {
+            "node": "Route by decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Haiku 5.5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Triage agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Triage schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Triage agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by decision": {
+      "main": [
+        [
+          {
+            "node": "Find existing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Gmail draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Find existing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find existing": {
+      "main": [
+        [
+          {
+            "node": "Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Gmail draft": {
+      "main": [
+        [
+          {
+            "node": "Find existing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop over emails": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Triage agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Exists?": {
+      "main": [
+        [
+          {
+            "node": "Update item",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "FYI?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update item": {
+      "main": [
+        [
+          {
+            "node": "Label processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Label processed": {
+      "main": [
+        [
+          {
+            "node": "Loop over emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FYI?": {
+      "main": [
+        [
+          {
+            "node": "Create FYI item",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create FYI item": {
+      "main": [
+        [
+          {
+            "node": "Label processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create task": {
+      "main": [
+        [
+          {
+            "node": "Has due date?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has due date?": {
+      "main": [
+        [
+          {
+            "node": "Set due date",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Label processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set due date": {
+      "main": [
+        [
+          {
+            "node": "Label processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Prague"
+  }
+}
