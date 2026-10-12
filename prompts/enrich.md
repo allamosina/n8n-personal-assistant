@@ -19,6 +19,8 @@ Return:
 - due: the deadline as YYYY-MM-DD if the message states it or clearly implies it, resolved against today's date {{today}}; otherwise null. Never invent a deadline.
 - priority_reason: one short line in {{title_language}} explaining the urgency.
 
+When the message needs both an answer and some other work, the task is the work; the reply is drafted separately, so do not make "reply" the title.
+
 Facts only from the message. Do not include greetings, signatures or quoted history in the summary.
 
 ## User

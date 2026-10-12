@@ -97,6 +97,23 @@ test('Telegram forces action needed; non-Gmail channels never get email_reply', 
   assert.equal(li.action_type, 'other');
 });
 
+test('needs_reply: a reply is drafted for email_reply, or when Haiku says the email also expects an answer', () => {
+  const both = mergeDecision({ mode: 'haiku', haiku: parseHaikuDecision({ ...haikuJson, needs_reply: true }) });
+  assert.deepEqual([both.action_type, both.needs_reply], ['other', true]);
+  const onlyWork = mergeDecision({ mode: 'haiku', haiku: parseHaikuDecision({ ...haikuJson, needs_reply: false }) });
+  assert.deepEqual([onlyWork.action_type, onlyWork.needs_reply], ['other', false]);
+  const reply = mergeDecision({ mode: 'haiku', haiku: parseHaikuDecision({ ...haikuJson, action_type: 'email_reply', needs_reply: false }) });
+  assert.equal(reply.needs_reply, true);
+  // Never on other channels, never without action, and Jev (no such question) falls back to action_type.
+  const li = mergeDecision({ mode: 'haiku', haiku: parseHaikuDecision({ ...haikuJson, needs_reply: true }), channel: 'linkedin' });
+  assert.equal(li.needs_reply, false);
+  assert.equal(mergeDecision({ mode: 'jev', jev: parseJevResponse(jevRaw(0.02)) }).needs_reply, false);
+  assert.equal(mergeDecision({ mode: 'jev', jev: parseJevResponse(jevRaw(0.97)) }).needs_reply, true);
+  const shadow = mergeDecision({ mode: 'shadow', jev: parseJevResponse(jevRaw(0.97)), haiku: parseHaikuDecision({ ...haikuJson, needs_reply: true }) });
+  assert.equal(shadow.shadow.haiku.needs_reply, true);
+  assert.equal('needs_reply' in shadow.shadow.jev, false);
+});
+
 test('out-of-range values fall back to defaults', () => {
   const d = mergeDecision({ mode: 'haiku', haiku: parseHaikuDecision({ action_needed: true, action_type: 'call', priority: 'P0', estimate_min: 45, confidence: 0.9 }) });
   assert.deepEqual([d.action_type, d.priority, d.estimate_min], ['other', 'P2', 30]);

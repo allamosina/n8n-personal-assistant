@@ -139,6 +139,14 @@ OpenRouter; test Russian and Czech in shadow mode".
   planner call. Define "age" as days since created.
 - **WF4** is n8n's built-in Error Trigger plus a Telegram node; per-node "Retry on fail"
   (3 attempts) on external-API nodes. Nothing custom.
+- **Reply and action are not exclusive (2026-10-12).** The PRD's `Kind` is Reply *or*
+  Action, but an email often asks for an answer and some work ("confirm the slot and send
+  the portfolio"). The Decide group therefore returns `needs_reply` next to `action_type`:
+  `action_type` says what the task is (`email_reply` only when answering is the whole job,
+  `other` when there is work to do), `needs_reply` says whether this email gets a Gmail
+  draft. A both-kind email becomes an Action task with `Draft created` checked plus a draft
+  in the thread. `Kind` stays single-valued; the planner lists such items under both the
+  tasks and the "drafts waiting" section.
 - **Keep decision and enrichment as two calls** even when Haiku makes the decision. One
   code path is worth more than a fraction of a cent.
 - **Config and pure logic live in the repo**, not in the n8n UI: Code-node functions are ES

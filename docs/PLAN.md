@@ -129,6 +129,9 @@ credential exists. At the owner's request a second planner, **WF3b Morning Plann
 goes live is the owner's decision. The same was done for the triage: **WF1b Email Triage
 (agent)** (`workflows/WF1b-email-triage-agent.json`), one agent call per email in a loop,
 native Gmail and Notion nodes; WF1 stays the published one until the owner decides.
+**2026-10-12, later:** the Decide step returns `needs_reply` next to `action_type`, so an
+email that needs an answer *and* some work gets both a Gmail draft and an Action task
+(`docs/PRD-REVIEW.md` §5). WF1, WF2 and WF1b carry the change; WF1 and WF2 republished.
 
 1. **WF4 Error Handler.** Error Trigger → format → Telegram. Test by pointing a throwaway
    workflow with a failing node at it.

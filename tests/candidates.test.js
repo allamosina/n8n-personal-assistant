@@ -50,7 +50,9 @@ test('FYI and drafts waiting', () => {
     item('fyi-done', { kind: 'FYI', status: 'Done' }),
     item('reply-draft', { kind: 'Reply', draft_created: true, link: 'https://mail.google.com/x' }),
     item('reply-nodraft', { kind: 'Reply', draft_created: false }),
+    item('action-draft', { kind: 'Action', draft_created: true }),
+    item('action-nodraft', { kind: 'Action', draft_created: false }),
   ];
   assert.deepEqual(selectFyi(items).map((f) => f.id), ['fyi-open']);
-  assert.deepEqual(selectDraftsWaiting(items), [{ id: 'reply-draft', title: 'reply-draft', link: 'https://mail.google.com/x' }]);
+  assert.deepEqual(selectDraftsWaiting(items).map((d) => d.id), ['reply-draft', 'action-draft']);
 });

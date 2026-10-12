@@ -76,6 +76,8 @@ export function parseHaikuDecision(json) {
     action_type: j.action_type ? { value: j.action_type, confidence: c } : null,
     priority: j.priority ? { value: j.priority, confidence: c } : null,
     estimate: j.estimate_min ? { value: Number(j.estimate_min), confidence: c } : null,
+    // "Also answer this email", independent of action_type. Jev has no such question.
+    needs_reply: typeof j.needs_reply === 'boolean' ? j.needs_reply : null,
   };
 }
 
@@ -93,14 +95,17 @@ export function needsHaiku({ mode, threshold = 0.7, jev, jevError, forceActionNe
 
 function finalize(d, forceActionNeeded, channel) {
   const actionNeeded = forceActionNeeded ? true : d.action_needed.value;
-  if (!actionNeeded) return { action_needed: false, action_type: null, priority: null, estimate_min: null };
+  if (!actionNeeded) return { action_needed: false, action_type: null, needs_reply: false, priority: null, estimate_min: null };
   let type = ACTION_TYPES.includes(d.action_type?.value) ? d.action_type.value : 'other';
   // Only Gmail replies can be drafted. A LinkedIn or Telegram reply is a task
   // to answer on that channel, so it is always "other" (PRD §7, LinkedIn branch).
   if (channel !== 'email' && type === 'email_reply') type = 'other';
   const prio = PRIORITIES.includes(d.priority?.value) ? d.priority.value : 'P2';
   const est = ESTIMATES.includes(d.estimate?.value) ? d.estimate.value : 30;
-  return { action_needed: true, action_type: type, priority: prio, estimate_min: est };
+  // A reply is drafted when the email is the thing to answer (email_reply) or when
+  // the decider says the email also expects an answer besides the other action.
+  const needsReply = channel === 'email' && (type === 'email_reply' || d.needs_reply === true);
+  return { action_needed: true, action_type: type, needs_reply: needsReply, priority: prio, estimate_min: est };
 }
 
 // Jev reports a calibrated P(yes); Haiku a self-reported confidence in its own
@@ -112,6 +117,7 @@ function compact(d, source) {
     action_needed: d.action_needed?.value ?? null,
     ...measure,
     action_type: d.action_type?.value ?? null,
+    ...(d.needs_reply == null ? {} : { needs_reply: d.needs_reply }),
     priority: d.priority?.value ?? null,
     estimate: d.estimate?.value ?? null,
   };
