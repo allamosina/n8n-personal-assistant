@@ -60,6 +60,14 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
       Token with the new bot token from BotFather → Save. Edit this credential rather than
       creating a new one: WF4 already points at it.
 
+### 1b. The "Сегодня" page
+
+Done (2026-10-12): page "Сегодня" under "Assistant", id in `config.notion.today_page_id`.
+WF3 rewrites it every weekday morning; the n8n Notion credential sees it because it is a
+child of "Assistant". Pin it in the Notion sidebar or on the phone; tick to-dos during the
+day. To set up a fresh copy: create an empty page under "Assistant", paste its id into
+`config/config.local.json`, rebuild and redeploy WF3.
+
 ### 2. Notion credential for n8n
 
 Done (2026-10-11) as "Notion account 2", type Notion OAuth2 API. The unused "Notion account"

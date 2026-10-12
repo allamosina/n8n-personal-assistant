@@ -147,6 +147,14 @@ OpenRouter; test Russian and Czech in shadow mode".
   draft. A both-kind email becomes an Action task with `Draft created` checked plus a draft
   in the thread. `Kind` stays single-valued; the planner lists such items under both the
   tasks and the "drafts waiting" section.
+- **One page to look at: "Сегодня" (2026-10-12).** The owner does not want to read the
+  "Assistant Inbox" table; she wants one place with today's to-dos. WF3 now rewrites a
+  fixed Notion page every morning: the planner's list for today as to-do blocks (each a
+  page mention of the task, so the title stays live), then the remaining open tasks under
+  Завтра / На этой неделе / Когда-нибудь by due date. Ticking a to-do is her way of closing
+  a task: the next run reads the ticked blocks first and sets those tasks to Done, the
+  second automatic status change allowed by hard rule 3. The table stays the store the
+  workflows write to; the digest keeps going to Telegram with a link to the page.
 - **Keep decision and enrichment as two calls** even when Haiku makes the decision. One
   code path is worth more than a fraction of a cent.
 - **Config and pure logic live in the repo**, not in the n8n UI: Code-node functions are ES

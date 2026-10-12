@@ -11,12 +11,13 @@
     "owner_chat_id": "000000000"
   },
   "notion": {
-    "$comment": "database_id is what the n8n Notion node needs; data_source_id (collection) is what the Notion connector queries.",
+    "$comment": "database_id is what the n8n Notion node needs; data_source_id (collection) is what the Notion connector queries. today_page_id: the one page WF3 rewrites every morning with the day's to-dos (docs/SETUP.md).",
     "assistant_page_id": "",
     "inbox_database_id": "",
     "inbox_data_source_id": "",
     "digests_database_id": "",
-    "digests_data_source_id": ""
+    "digests_data_source_id": "",
+    "today_page_id": ""
   },
   "schedule": {
     "work_start": "09:00",

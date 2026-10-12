@@ -202,3 +202,23 @@ Problem: community reports say the node does not set `In-Reply-To` / `References
 recipient may see a new conversation.
 Instead: pass `threadId` and the exact `Re: <subject>`; verify with a draft to self. If it
 does not thread, create the draft through the Gmail API with a raw MIME message.
+
+## 2026-10-12 — Notion API cannot replace a page's content
+
+Tried: rewriting the "Сегодня" page in one call every morning.
+Problem: the Notion API only appends children (`PATCH /blocks/{page}/children`); there
+is no "replace" and a block can only be deleted one at a time (`DELETE /blocks/{id}`).
+Instead: WF3 lists the page's top-level blocks (max 100; the page is rendered to stay under
+that), deletes them with one HTTP Request node in batches of 3 per second, then appends the
+new blocks in a single request (`executeOnce`). A first run on an empty page skips the
+deletion through an If node, so the append still runs. A side effect worth having: the
+same listing gives the to-dos the owner ticked, which is how tasks get closed.
+
+## 2026-10-12 — Google Calendar node and "primary"
+
+Tried: `calendar` in id mode with the value `primary` (committed WF3 JSON since Phase 4).
+Problem: the node rejects `primary` in id mode; the owner fixed the live node by picking her
+calendar from the list, which puts her address into the node (and would land in git on export).
+Instead: the committed JSON uses list mode with the value `primary`, the form WF3b verified;
+the live node keeps the owner's choice. Exports of WF3 are checked for the address.
+
