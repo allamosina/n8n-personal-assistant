@@ -41,8 +41,11 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
 - [x] **Notion credential** in n8n ("Notion account 2", Notion OAuth2, 2026-10-11),
       attached to the Notion nodes of WF1, WF2 and WF3.
 - [x] **WF3 Morning Planner created** (2026-10-11), unpublished, WF4 as its error workflow,
-      weekdays 07:30 Prague time. Waits for the Google Calendar credential (To do 3) and the
-      new bot token (To do 1).
+      weekdays 07:30 Prague time. Calendar credential attached 2026-10-12; waits for the
+      publish decision (To do 3).
+- [x] **WF3b Morning Planner (agent) created** (2026-10-12), unpublished: the same digest
+      built from n8n's AI Agent node with Notion and Calendar tools, for comparison with WF3.
+      Two manual runs delivered the digest.
 - [x] Hetzner server: created by mistake during setup. **Delete it** in the Hetzner console
       if not done yet, so it stops billing. Nothing on it is needed.
 
@@ -65,17 +68,16 @@ Done (2026-10-11) as "Notion account 2", type Notion OAuth2 API. The unused "Not
       choose **Specific Domains** and enter `api.notion.com` (or choose All) → Save. The
       Notion steps of WF1, WF2 and WF3 are HTTP Request nodes and need this.
 
-### 3. Google Calendar credential (5 minutes)
+### 3. Google Calendar credential
 
-The Gmail credential exists, so a Google Cloud OAuth client exists too. Calendar needs its
-own credential with calendar scopes.
+Done (2026-10-12) as "Google Calendar account", attached to WF3 "Fetch calendar" and to the
+calendar tool of WF3b.
 
-- [ ] In n8n: Credentials → Google Calendar OAuth2 API. If n8n Cloud offers "Sign in with
-      Google" there, use it. Otherwise reuse the client ID and secret from the Gmail
-      credential and enable the Google Calendar API in the same Google Cloud project.
 - [ ] If the Google OAuth consent screen is still in "Testing", publish it to "In
       production": in Testing, Google expires the sign-in after 7 days and the workflows
       stop silently.
+- [ ] Decide which morning planner to publish: WF3 (code computes free time) or WF3b (the
+      agent does); see `docs/NOTES.md` 2026-10-12. Tell Claude Code and it publishes one.
 
 ### 4. Gmail labels
 

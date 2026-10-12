@@ -121,6 +121,12 @@ copied from WF1, unpublished), and so is WF3 Morning Planner
 (`workflows/WF3-morning-planner.json`, unpublished). Anthropic and Notion credentials are
 attached everywhere. Open before publishing: the new Telegram bot token in n8n, the Google
 Calendar credential for WF3, and the owner's go-ahead for the first production runs.
+**2026-10-12:** WF1 and WF2 are published and processed real mail after two fixes (schema
+nullable enums, credential domain allow-list; see `docs/NOTES.md`). The Google Calendar
+credential exists. At the owner's request a second planner, **WF3b Morning Planner
+(agent)**, was built from n8n's AI Agent node with Notion and Calendar tools
+(`workflows/WF3b-morning-planner-agent.json`) and test-run twice; which of WF3 / WF3b
+goes live is the owner's decision.
 
 1. **WF4 Error Handler.** Error Trigger → format → Telegram. Test by pointing a throwaway
    workflow with a failing node at it.

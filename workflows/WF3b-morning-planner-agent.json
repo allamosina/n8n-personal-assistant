@@ -1,0 +1,447 @@
+{
+  "name": "WF3b Morning Planner (agent)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "name": "Weekdays 07:30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Settings for this workflow (chat ID, Notion IDs, hours). Other nodes read\n// $('Config').first().json; the build injects config/config.local.json here.\n// @inject config as CONFIG\n// @end-inject\n\nreturn [{ json: CONFIG }];\n"
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Today is {{ $now.setZone($('Config').first().json.timezone).toFormat('yyyy-LL-dd') }} ({{ $now.setZone($('Config').first().json.timezone).toFormat('cccc') }}). Fetch the open tasks and today's calendar with your tools, then plan the day and return the digest in the required JSON format.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are the morning planning assistant for {{ $('Config').first().json.owner.name }}. {{ $('Config').first().json.owner.context }}\n\nYou run once every working day at 07:30 (Europe/Prague). Do this, in order:\n1. Call the tool \"Open tasks\" once. It returns every open task from the Notion inbox (status Inbox, Planned or In progress) with title, kind (Action / Reply / FYI), priority (P1 urgent, P2 this week, P3 can wait), due date, estimate in minutes, summary and link.\n2. Call the tool \"Today's calendar\" once. It returns today's events from Google Calendar.\n3. Compute free time: working hours are {{ $('Config').first().json.schedule.work_start }}-{{ $('Config').first().json.schedule.work_end }}; subtract every meeting that is not declined, cancelled or marked free, plus a {{ $('Config').first().json.schedule.meeting_buffer_min }}-minute buffer after each one; an all-day busy event blocks the whole day. List the free slots with their length.\n4. Plan the day. \"today\": the tasks to do today in order, each with a suggested start time inside a free slot; the sum of their estimates must not exceed the free minutes. Prefer overdue and due-soon tasks, then P1, then tasks that have waited long; put focused work in the longest slots and short tasks in short gaps. \"move\": tasks that matter but do not fit today, each with a reason and a new working-day date; list only tasks the owner should consciously reschedule. \"risks\": tasks due within three days that are at risk, with a one-line reason. \"fyi\": the FYI items (kind FYI), listed so the owner sees them once. Use only task IDs that the tool returned; never invent tasks or dates.\n5. Write the digest twice. \"telegram_html\": Telegram HTML only (allowed tags: b, i, a href, code; escape &, < and > in text), sections in this order with bold headings: \"План на <date>\" header line, free/planned minutes line, Встречи, Главное на сегодня (time · priority · title (N мин), title linked to the task), Предлагаю перенести, Дедлайны под угрозой, Для сведения, then the note; skip empty sections; under 3500 characters. \"digest_markdown\": the same content as Markdown for a Notion page.\n\nRules: write every human-readable text in {{ $('Config').first().json.language.digest === 'ru' ? 'Russian' : 'English' }}. You only propose; never create, update or delete anything. The assistant prepares and suggests, the owner decides.",
+          "maxIterations": 8,
+          "enableStreaming": false
+        }
+      },
+      "name": "Planner agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        576,
+        112
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "claude-sonnet-5-5"
+        },
+        "options": {
+          "maxTokensToSample": 8000,
+          "thinkingMode": "adaptive",
+          "effort": "high"
+        }
+      },
+      "name": "Claude Sonnet 5.5",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.6,
+      "position": [
+        448,
+        336
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "anthropicApi"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Returns every open task from the Notion \"Assistant Inbox\" (status Inbox, Planned or In progress). Takes no input.",
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "getAll",
+        "dataSourceId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "5f562346-dcc9-4e9c-9bd1-be241ee32b62"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Status|select",
+              "condition": "equals",
+              "optionValue": "Inbox,Planned,In progress"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Open tasks",
+      "type": "n8n-nodes-base.notionTool",
+      "typeVersion": 3,
+      "position": [
+        576,
+        336
+      ],
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Returns today's events from the owner's primary Google Calendar. Takes no input.",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "cachedResultName": "Primary calendar",
+          "mode": "list",
+          "value": "primary"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $now.setZone($('Config').first().json.timezone).startOf('day').toISO() }}",
+        "timeMax": "={{ $now.setZone($('Config').first().json.timezone).endOf('day').toISO() }}",
+        "options": {
+          "orderBy": "startTime"
+        }
+      },
+      "name": "Today's calendar",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        704,
+        336
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "googleCalendarOAuth2Api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"free_minutes\": {\n      \"type\": \"integer\",\n      \"description\": \"Free working minutes today after meetings and buffers\"\n    },\n    \"planned_minutes\": {\n      \"type\": \"integer\",\n      \"description\": \"Sum of estimates of the tasks in today\"\n    },\n    \"overloaded\": {\n      \"type\": \"boolean\",\n      \"description\": \"true when open work that matters did not fit into today\"\n    },\n    \"meetings\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      },\n      \"description\": \"One line per meeting, e.g. \\\"10:00–11:00 · Standup\\\"\"\n    },\n    \"today\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"title\": {\n            \"type\": \"string\"\n          },\n          \"priority\": {\n            \"type\": \"string\"\n          },\n          \"estimate_min\": {\n            \"type\": \"integer\"\n          },\n          \"slot\": {\n            \"type\": \"string\",\n            \"description\": \"Suggested start time HH:MM inside a free slot\"\n          }\n        },\n        \"required\": [\n          \"id\",\n          \"title\",\n          \"priority\",\n          \"estimate_min\",\n          \"slot\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"move\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"title\": {\n            \"type\": \"string\"\n          },\n          \"reason\": {\n            \"type\": \"string\"\n          },\n          \"new_date\": {\n            \"type\": \"string\",\n            \"description\": \"YYYY-MM-DD, a working day\"\n          }\n        },\n        \"required\": [\n          \"id\",\n          \"title\",\n          \"reason\",\n          \"new_date\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"risks\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"title\": {\n            \"type\": \"string\"\n          },\n          \"reason\": {\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"id\",\n          \"title\",\n          \"reason\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"fyi\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"title\": {\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"id\",\n          \"title\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"note\": {\n      \"type\": \"string\",\n      \"description\": \"One sentence on how the day looks\"\n    },\n    \"telegram_html\": {\n      \"type\": \"string\",\n      \"description\": \"The whole digest as Telegram HTML, under 3500 characters\"\n    },\n    \"digest_markdown\": {\n      \"type\": \"string\",\n      \"description\": \"The same digest as Markdown for the Notion page\"\n    }\n  },\n  \"required\": [\n    \"free_minutes\",\n    \"planned_minutes\",\n    \"overloaded\",\n    \"meetings\",\n    \"today\",\n    \"move\",\n    \"risks\",\n    \"fyi\",\n    \"note\",\n    \"telegram_html\",\n    \"digest_markdown\"\n  ],\n  \"additionalProperties\": false\n}"
+      },
+      "name": "Digest schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        832,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Config').first().json.telegram.owner_chat_id }}",
+        "text": "={{ $json.output.telegram_html }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "name": "Send digest",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1088,
+        224
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "telegramApi"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "dataSourceId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "cde0f75c-925e-4de9-b6f8-a48f7f72b7fb"
+        },
+        "title": "=План на {{ $now.setZone($('Config').first().json.timezone).toFormat('yyyy-LL-dd') }} (agent)",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Date|date",
+              "includeTime": false,
+              "date": "={{ $now.setZone($('Config').first().json.timezone).toFormat('yyyy-LL-dd') }}"
+            },
+            {
+              "key": "Free minutes|number",
+              "numberValue": "={{ $('Planner agent').first().json.output.free_minutes }}"
+            },
+            {
+              "key": "Planned minutes|number",
+              "numberValue": "={{ $('Planner agent').first().json.output.planned_minutes }}"
+            },
+            {
+              "key": "Overloaded|checkbox",
+              "checkboxValue": "={{ $('Planner agent').first().json.output.overloaded }}"
+            }
+          ]
+        },
+        "contentType": "markdown",
+        "markdown": "={{ $('Planner agent').first().json.output.digest_markdown }}",
+        "options": {}
+      },
+      "name": "Save digest page",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        1312,
+        224
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "getAll",
+        "dataSourceId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "5f562346-dcc9-4e9c-9bd1-be241ee32b62"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Kind|select",
+              "condition": "equals",
+              "optionValue": "FYI"
+            },
+            {
+              "key": "Status|select",
+              "condition": "equals",
+              "optionValue": "Inbox,Planned,In progress"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Open FYI items",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        1616,
+        224
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.id }}"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Status|select",
+              "selectValue": "Done"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Close FYI item",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        1840,
+        224
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekdays 07:30": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Planner agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planner agent": {
+      "main": [
+        [
+          {
+            "node": "Send digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Sonnet 5.5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Planner agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Open tasks": {
+      "ai_tool": [
+        [
+          {
+            "node": "Planner agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Today's calendar": {
+      "ai_tool": [
+        [
+          {
+            "node": "Planner agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Digest schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Planner agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send digest": {
+      "main": [
+        [
+          {
+            "node": "Save digest page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save digest page": {
+      "main": [
+        [
+          {
+            "node": "Open FYI items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Open FYI items": {
+      "main": [
+        [
+          {
+            "node": "Close FYI item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Prague"
+  }
+}

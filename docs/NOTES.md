@@ -10,6 +10,39 @@ Problem: what failed or would fail, with a source if any.
 Instead: what we did, and where it lives in the repo.
 ```
 
+## 2026-10-12 — WF3b: the planner rebuilt with n8n's own building blocks
+
+Tried (owner's request): a copy of WF3 Morning Planner made of native n8n parts instead of
+Code + HTTP Request nodes: AI Agent node (Claude Sonnet 5.5 through the Anthropic Chat
+Model node, adaptive thinking, effort high) with a Notion Tool ("Open tasks", filter fixed
+in the node, no AI-filled parameters) and a Google Calendar Tool ("Today's calendar"), a
+Structured Output Parser with the digest schema, then native Notion nodes for the digest
+page and for closing FYI items, and the Telegram node. `workflows/WF3b-morning-planner-agent.json`,
+instance id `SeIkODNwNdWyEKfV`, unpublished.
+
+Findings from two manual runs (executions 54 and 57):
+- Works end to end: 14–20 s per run, about 5 500 tokens (Sonnet), digest in Telegram with
+  meetings, free minutes and linked tasks, page in "Daily digests" via Markdown content.
+- Google Calendar resource locator: `mode: "id"` with the value `primary` fails with
+  "Calendar parameter's value is invalid" (the id mode validates a calendar address).
+  `mode: "list"` with value `primary` passes the keyword through and the API accepts it.
+  WF3 "Fetch calendar" had the same bug; the owner pointed it at her calendar from the
+  list in the UI (the committed WF3 JSON still says `primary`; switch it to list mode
+  before the next export so no address lands in git).
+- When the calendar tool failed, the agent did not stop: it wrote the digest with a
+  warning and 540 free minutes. Convenient, but it means a broken tool produces a
+  plausible plan instead of an error; WF3's code path fails loudly and WF4 reports it.
+- The arithmetic (free slots, buffers, "fits into the day") is done by the model, not by
+  code; `capacity.js` / `feasibility.js` are not used, so the plan is not guaranteed to
+  fit. The prompt and schema live in the node parameters, not in `prompts/`.
+- The credential-domain restriction does not apply: tool and Notion nodes use the OAuth
+  credential directly, no "Allowed HTTP Request Domains" needed.
+- Cost: Anthropic API key as before; the Anthropic Chat Model node can run on n8n Cloud
+  gateway credits only with a gateway-managed credential created in the UI.
+
+Decision pending: keep WF3 (deterministic capacity, tested code) or WF3b (fewer parts,
+model does the arithmetic). Only one of them should be published.
+
 ## 2026-10-11 — Credentials are blocked in HTTP Request nodes by default
 
 Tried: the Notion OAuth2 credential on the HTTP Request nodes of the Upsert group (the Notion
