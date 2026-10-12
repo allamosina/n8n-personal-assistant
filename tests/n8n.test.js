@@ -11,6 +11,7 @@ test('fileNameFor', () => {
   assert.equal(fileNameFor('WF1 Email Triage'), 'WF1-email-triage.json');
   assert.equal(fileNameFor('WF0 Upsert Item'), 'WF0-upsert-item.json');
   assert.equal(fileNameFor('wf3 Morning Planner & Digest'), 'WF3-morning-planner-digest.json');
+  assert.equal(fileNameFor('WF3b Morning Planner (agent)'), 'WF3b-morning-planner-agent.json');
 });
 
 test('pickSettings drops keys the API rejects', () => {

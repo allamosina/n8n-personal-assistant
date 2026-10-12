@@ -59,16 +59,16 @@ export function deployOrder(items) {
   return out;
 }
 
-/** "WF1 Email Triage" -> "WF1-email-triage.json" */
+/** "WF1 Email Triage" -> "WF1-email-triage.json"; variants like "WF3b" keep their letter. */
 export function fileNameFor(name) {
   return (
     String(name)
       .trim()
-      .replace(/^(WF\d+)\s+/i, (_, p) => p.toUpperCase() + '-')
+      .replace(/^(WF\d+)([a-z]?)\s+/i, (_, p, v) => p.toUpperCase() + v.toLowerCase() + '-')
       .replace(/[^A-Za-z0-9-]+/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '')
-      .replace(/^(WF\d+-)(.*)$/, (_, p, rest) => p + rest.toLowerCase()) + '.json'
+      .replace(/^(WF\d+[a-z]?-)(.*)$/, (_, p, rest) => p + rest.toLowerCase()) + '.json'
   );
 }
 
