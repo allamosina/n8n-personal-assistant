@@ -1,9 +1,9 @@
 # n8n personal assistant
 
-A personal assistant on self-hosted n8n. It reads Gmail, LinkedIn notification emails and
-Telegram messages forwarded to a private bot, turns anything that needs attention into tasks
-in Notion, prepares Gmail reply **drafts**, and sends a morning digest to Telegram with a
-feasibility check against the calendar.
+A personal assistant on n8n. It reads Gmail, LinkedIn notification emails and Telegram
+messages forwarded to a private bot, turns anything that needs attention into tasks in
+Notion, prepares Gmail reply **drafts**, and every weekday morning plans the day against the
+calendar: a digest on Telegram and one Notion page, "Сегодня", with the day's to-dos.
 
 It never sends anything on the owner's behalf. It prepares, sorts and suggests.
 
@@ -25,6 +25,8 @@ It runs on n8n Cloud, built and maintained from this repo through the n8n connec
 | `src/` | Code-node logic as pure ES modules, unit-tested in `tests/` |
 | `config/` | `config.example.json` (committed) and `config.local.json` (gitignored) |
 | `notion/schema.json` | Property definitions for the two Notion databases |
+| `tests/` | `node --test` unit tests for `src/` and `scripts/lib/` |
+| `docs/` | Build plan, design decisions, setup checklist, friction log |
 | `scripts/` | Build, deploy, export, safety check |
 | `infra/` | Self-hosting alternative: Docker Compose (n8n + Caddy), install and backup scripts |
 
@@ -45,11 +47,109 @@ Notion connector, but the schema works with any Notion API client.
 ## How the pieces fit
 
 ```
-Gmail Trigger ──► WF1 Email Triage ──┐  each: Decide (Jev | Haiku) ──► Upsert ──► Notion "Assistant Inbox"
-Telegram bot ──► WF2 Telegram Intake ┘                                                      │
-                                                                                            ▼
-Schedule 07:30 ──► WF3 Morning Planner ◄── Google Calendar (today)                  reads open items
+Gmail Trigger ──► WF1 Email Triage ──┐  each: Prefilter ──► Decide ──► Enrich ──► (Draft) ──► Upsert ──► Notion "Assistant Inbox"
+Telegram bot ──► WF2 Telegram Intake ┘                                                                      │
+                                                                                                            ▼
+Schedule 07:30 ──► WF3 Morning Planner ◄── Google Calendar (today)                                  reads open items
                         │
-                        └──► Telegram digest (split ≤4096) + Notion "Daily digests" page
+                        ├──► Telegram digest (split ≤4096) + Notion "Daily digests" page
+                        └──► Notion page "Сегодня": today's to-dos, then Завтра / На этой неделе / Когда-нибудь
 Any failure ──► WF4 Error Handler ──► Telegram alert
 ```
+
+## What it does, step by step
+
+The rules the whole system obeys: nothing is ever sent on the owner's behalf (drafts only);
+Telegram messages go only to the owner's chat; the assistant never changes dates, priorities
+or statuses in Notion by itself, with two exceptions listed under WF3; senders on the privacy
+exclusion list never reach a model; Notion stores a summary and a link, never a message body.
+Deterministic steps (filtering, dedup, date math, capacity arithmetic) are code in `src/`;
+judgment (what needs action, titles, drafts, the plan) is a model with a strict JSON schema.
+
+### WF1 Email Triage (Gmail, every 30 minutes)
+
+1. **Poll.** The Gmail Trigger fetches new mail, excluding mail already labelled
+   `assistant/processed`, promotions, forums, social and the owner's own sent mail.
+2. **Prefilter** (`src/prefilter.js`, no model). The sender is checked against the config
+   lists: `exclude_*` (privacy: dropped, never shown to a model), `ignore_*` (dropped), and
+   LinkedIn domains. LinkedIn job alerts are dropped by sender or subject pattern; other
+   LinkedIn notifications continue on the `linkedin` channel. The body is stripped of HTML,
+   quoted history is cut, and the text is capped at 6 000 characters.
+3. **Decide** (`prompts/decide.md`, Claude Haiku, structured output). Four typed answers:
+   `action_needed`; `action_type` (`email_reply` when answering is the whole job, `other`
+   when there is work to do); `needs_reply` (whether this email itself should get a draft,
+   independent of the task type); `priority` P1–P3 and `estimate_min` 15/30/60/120; plus a
+   self-reported confidence. `src/decide-merge.js` applies defaults and the channel rules:
+   only Gmail can be `email_reply` (a LinkedIn reply is an `other` task to answer on
+   LinkedIn), and `needs_reply` is forced true for `email_reply`. The same module can run
+   Jev (TypeSafe AI) as the decider in `shadow` or `jev` mode, with Haiku as fallback.
+4. **Route.** No action: an **FYI** item is created from subject and sender, no further
+   model call. Action: **Enrich** (`prompts/enrich.md`, Haiku) writes the task title (in the
+   configured language, imperative), a one- or two-sentence summary, a due date only when
+   the email states or implies one, and a priority reason. When both a reply and other work
+   are needed, the task describes the work; the reply is drafted separately.
+5. **Draft** (`prompts/draft-reply.md`, Haiku) when `needs_reply` is true: a reply in the
+   language of the email, short and specific, never inventing facts; missing information
+   becomes `[[placeholders]]` and `needs_input` is set. The draft is created in the Gmail
+   thread, never sent. The item records `Draft created`.
+6. **Upsert** (`src/normalize-item.js`). The item is normalised (title ≤200 chars, estimate
+   snapped to the allowed buckets, defaults P2 and 30 min) and written to "Assistant Inbox"
+   keyed on `Source ID` (`gmail:<messageId>` or `linkedin:<messageId>`): a known item gets
+   its summary refreshed, never its status, due date, priority or estimate. The mail is then
+   labelled `assistant/processed` (and `assistant/fyi` for FYI items) so it is not polled
+   again.
+
+### WF2 Telegram Intake (private bot)
+
+1. **Guard** (`src/parse-forward.js`). Only messages from the owner's chat ID are processed;
+   everything else is dropped silently. For forwarded messages the origin (user, hidden
+   user, chat or channel) is resolved; an origin on `exclude_chats` (by ID, @username or
+   display name) is never sent to a model, and the owner gets a "skipped" notice.
+2. **Decide and Enrich** as in WF1, on the `telegram` channel: anything forwarded to the bot
+   is treated as needing action, so the model only sets priority, estimate and the text
+   fields. A reply to a Telegram message is a task to answer on Telegram, never a Gmail draft.
+3. **Upsert** keyed on `tg:<chat_id>:<message_id>`, then a confirmation to the owner with the
+   title, priority, estimate, due date and the Notion link.
+
+### WF3 Morning Planner (weekdays 07:30, Europe/Prague)
+
+1. **Read the "Сегодня" page** (`src/today-page.js`). To-dos the owner ticked since the last
+   run name their tasks through page mentions; those tasks are set to Done, the first of
+   the two allowed automatic status changes, and left out of today's plan.
+2. **Gather.** Open items (Status Inbox, Planned or In progress) from "Assistant Inbox" and
+   today's events from Google Calendar.
+3. **Capacity** (`src/capacity.js`). Free minutes between the configured working hours,
+   minus meetings and a buffer after each; declined, cancelled and "free" events do not
+   block; slots shorter than 15 minutes do not count.
+4. **Candidates** (`src/candidates.js`). Open tasks ranked overdue first, then due within
+   three days, then priority, then earliest due, then oldest; capped at 40 for the model.
+   FYI items not yet shown and tasks with a waiting draft are collected separately.
+5. **Plan** (`prompts/planner.md`, Claude Sonnet, effort high). The model proposes the
+   tasks for today with slot times, tasks to move with a reason and new date, deadlines at
+   risk, and a one-line note. `src/feasibility.js` then has the last word: unknown IDs are
+   dropped, estimates come from the data, and the plan is trimmed until it fits the free
+   minutes (lowest priority moved first, with a refill pass so a small task is not pushed
+   out by a big one that never fit).
+6. **Deliver** (`src/digest-format.js`). A page in "Daily digests" with the numbers and the
+   sections, then the digest on Telegram in HTML chunks under 4 096 characters: meetings,
+   today, to move, deadlines at risk, FYI, drafts waiting in Gmail, and a link to the
+   "Сегодня" page. FYI items shown in the digest are set to Done, the second allowed status
+   change.
+7. **Rewrite "Сегодня".** The page is emptied block by block and refilled: a summary line,
+   the plan as to-do blocks (task as a live page mention, slot, estimate, due, mail link),
+   then the remaining open tasks under Завтра (due by tomorrow, overdue leftovers included),
+   На этой неделе and Когда-нибудь. Capped at 100 blocks with an "… ещё N" line.
+
+### WF4 Error Handler
+
+Every other workflow names WF4 as its error workflow. A failure produces one Telegram
+message to the owner with the workflow, the failing node, the error and a link to the
+execution.
+
+### Cost and bounds
+
+One Haiku call per email that passes the prefilter, a second for the task text, a third
+only when a draft is needed; one Sonnet call per day for the plan. Inputs are bounded
+(6 000-character bodies, 40 planner candidates), polling is every 30 minutes, and the
+n8n Cloud Starter budget of 2 500 executions per month is why Decide and Upsert are node
+groups inside WF1 and WF2 rather than sub-workflows.
