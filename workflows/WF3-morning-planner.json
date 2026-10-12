@@ -39,7 +39,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        480,
+        720,
         300
       ],
       "parameters": {
@@ -80,7 +80,7 @@
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1.3,
       "position": [
-        720,
+        960,
         300
       ],
       "parameters": {
@@ -88,8 +88,9 @@
         "operation": "getAll",
         "calendar": {
           "__rl": true,
-          "mode": "id",
-          "value": "primary"
+          "mode": "list",
+          "value": "primary",
+          "cachedResultName": "primary"
         },
         "returnAll": true,
         "timeMin": "={{ $now.setZone($('Config').first().json.timezone).startOf('day').toISO() }}",
@@ -109,13 +110,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        960,
+        1200,
         300
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/normalize-item.js as normalize\n// @end-inject\n// @inject src/candidates.js as cand\n// @end-inject\n// @inject src/capacity.js as cap\n// @end-inject\n// @inject src/claude.js as claude\n// @end-inject\n// Deterministic part of the planning: free time, candidate ranking and the\n// bounded model input (at most max_planner_candidates tasks). One item out.\nconst PROMPT = CONFIG.prompts.planner;\nconst tz = CONFIG.timezone;\nconst now = $now.setZone(tz);\nconst today = now.toISODate();\nconst pages = $('Fetch open items').first().json.results || [];\nconst items = pages.map((p) => normalize.fromNotionPage(p));\n// Fetch calendar has \"always output data\": an empty day arrives as one empty item.\nconst events = $('Fetch calendar').all().map((i) => i.json).filter((e) => e && e.id);\nconst capacity = cap.computeCapacity({ date: today, timezone: tz, workStart: CONFIG.schedule.work_start, workEnd: CONFIG.schedule.work_end, events, bufferMin: CONFIG.schedule.meeting_buffer_min });\nconst { candidates, omitted } = cand.selectCandidates(items, { today, max: CONFIG.defaults.max_planner_candidates, defaultPriority: CONFIG.defaults.priority, defaultEstimate: CONFIG.defaults.estimate_min });\nconst fyi = cand.selectFyi(items);\nconst drafts = cand.selectDraftsWaiting(items);\nconst LANG = { ru: 'Russian', en: 'English', cs: 'Czech' };\nconst list = (arr, f) => (arr.length ? arr.map(f).join('\\n') : '-');\nconst vars = {\n  owner_name: CONFIG.owner.name,\n  owner_context: CONFIG.owner.context,\n  digest_language: LANG[CONFIG.language.digest] || CONFIG.language.digest,\n  today,\n  weekday: now.toFormat('cccc'),\n  free_minutes: capacity.free_minutes,\n  free_slots: list(capacity.free_slots, (s) => s.start + '-' + s.end + ' (' + s.minutes + ' min)'),\n  meetings: list(capacity.meetings, (m) => (m.all_day ? 'all day: ' + m.title : m.start + '-' + m.end + ': ' + m.title)),\n  omitted,\n  candidates: candidates.map(({ id, title, kind, priority, due, days_to_due, overdue, age_days, estimate_min }) => ({ id, title, kind, priority, due, days_to_due, overdue, age_days, estimate_min })),\n};\nreturn [{ json: { today, capacity, candidates, omitted, fyi, drafts, request: claude.buildClaudeRequest(PROMPT, vars, CONFIG.models) } }];\n"
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/normalize-item.js as normalize\n// @end-inject\n// @inject src/candidates.js as cand\n// @end-inject\n// @inject src/capacity.js as cap\n// @end-inject\n// @inject src/claude.js as claude\n// @end-inject\n// @inject src/today-page.js as todayPage\n// @end-inject\n// Deterministic part of the planning: free time, candidate ranking and the\n// bounded model input (at most max_planner_candidates tasks). One item out.\nconst PROMPT = CONFIG.prompts.planner;\nconst tz = CONFIG.timezone;\nconst now = $now.setZone(tz);\nconst today = now.toISODate();\nconst pages = $('Fetch open items').first().json.results || [];\n// Tasks ticked on the \"Today\" page are being closed in a parallel branch: plan without them.\nconst checked = new Set(todayPage.checkedTaskIds($('Read today page').first().json.results || []));\nconst items = pages.map((p) => normalize.fromNotionPage(p)).filter((it) => !checked.has(it.id));\n// Fetch calendar has \"always output data\": an empty day arrives as one empty item.\nconst events = $('Fetch calendar').all().map((i) => i.json).filter((e) => e && e.id);\nconst capacity = cap.computeCapacity({ date: today, timezone: tz, workStart: CONFIG.schedule.work_start, workEnd: CONFIG.schedule.work_end, events, bufferMin: CONFIG.schedule.meeting_buffer_min });\nconst { candidates, omitted } = cand.selectCandidates(items, { today, max: CONFIG.defaults.max_planner_candidates, defaultPriority: CONFIG.defaults.priority, defaultEstimate: CONFIG.defaults.estimate_min });\nconst fyi = cand.selectFyi(items);\nconst drafts = cand.selectDraftsWaiting(items);\nconst LANG = { ru: 'Russian', en: 'English', cs: 'Czech' };\nconst list = (arr, f) => (arr.length ? arr.map(f).join('\\n') : '-');\nconst vars = {\n  owner_name: CONFIG.owner.name,\n  owner_context: CONFIG.owner.context,\n  digest_language: LANG[CONFIG.language.digest] || CONFIG.language.digest,\n  today,\n  weekday: now.toFormat('cccc'),\n  free_minutes: capacity.free_minutes,\n  free_slots: list(capacity.free_slots, (s) => s.start + '-' + s.end + ' (' + s.minutes + ' min)'),\n  meetings: list(capacity.meetings, (m) => (m.all_day ? 'all day: ' + m.title : m.start + '-' + m.end + ': ' + m.title)),\n  omitted,\n  candidates: candidates.map(({ id, title, kind, priority, due, days_to_due, overdue, age_days, estimate_min }) => ({ id, title, kind, priority, due, days_to_due, overdue, age_days, estimate_min })),\n};\n// open_items feeds the \"Today\" page buckets: every open task, not only the capped candidates.\nconst open_items = items.filter((it) => it.kind !== 'FYI').map(({ id, title, kind, status, priority, due, link, url }) => ({ id, title, kind, status, priority, due, link: link || url || null }));\nreturn [{ json: { today, capacity, candidates, omitted, fyi, drafts, open_items, request: claude.buildClaudeRequest(PROMPT, vars, CONFIG.models) } }];"
       }
     },
     {
@@ -123,7 +124,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        1200,
+        1440,
         300
       ],
       "parameters": {
@@ -164,13 +165,13 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1440,
+        1680,
         300
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/claude.js as claude\n// @end-inject\n// @inject src/feasibility.js as feas\n// @end-inject\n// @inject src/digest-format.js as digest\n// @end-inject\n// The code, not the model, has the last word on the arithmetic: the plan is\n// trimmed to the free minutes, unknown IDs are dropped, then rendered twice.\nconst input = $('Prepare planner input').first().json;\nconst response = $input.first().json;\nconst lang = CONFIG.language.digest;\nconst L = digest.labels(lang);\nconst raw = claude.parseClaudeResponse(response);\nconst plan = feas.enforceFeasibility(raw, { candidates: input.candidates, freeMinutes: input.capacity.free_minutes, today: input.today, workDays: CONFIG.schedule.digest_days, overflowReason: L.overflow });\nconst model = digest.buildDigestSections({ date: input.today, capacity: input.capacity, plan, fyi: input.fyi, drafts: input.drafts, omitted: input.omitted }, lang);\nconst page = {\n  parent: { database_id: CONFIG.notion.digests_database_id },\n  properties: {\n    Name: { title: [{ type: 'text', text: { content: model.header } }] },\n    Date: { date: { start: input.today } },\n    'Free minutes': { number: plan.free_minutes },\n    'Planned minutes': { number: plan.planned_minutes },\n    Overloaded: { checkbox: plan.overloaded },\n  },\n  children: digest.renderNotionBlocks(model),\n};\nreturn [{ json: { today: input.today, messages: digest.renderTelegram(model), page, fyi_ids: input.fyi.map((f) => f.id), usage_planner: claude.usageOf(response) } }];\n"
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/claude.js as claude\n// @end-inject\n// @inject src/feasibility.js as feas\n// @end-inject\n// @inject src/digest-format.js as digest\n// @end-inject\n// @inject src/today-page.js as todayPage\n// @end-inject\n// The code, not the model, has the last word on the arithmetic: the plan is\n// trimmed to the free minutes, unknown IDs are dropped, then rendered twice.\nconst input = $('Prepare planner input').first().json;\nconst response = $input.first().json;\nconst lang = CONFIG.language.digest;\nconst L = digest.labels(lang);\nconst raw = claude.parseClaudeResponse(response);\nconst plan = feas.enforceFeasibility(raw, { candidates: input.candidates, freeMinutes: input.capacity.free_minutes, today: input.today, workDays: CONFIG.schedule.digest_days, overflowReason: L.overflow });\nconst model = digest.buildDigestSections({ date: input.today, capacity: input.capacity, plan, fyi: input.fyi, drafts: input.drafts, omitted: input.omitted }, lang);\nconst page = {\n  parent: { database_id: CONFIG.notion.digests_database_id },\n  properties: {\n    Name: { title: [{ type: 'text', text: { content: model.header } }] },\n    Date: { date: { start: input.today } },\n    'Free minutes': { number: plan.free_minutes },\n    'Planned minutes': { number: plan.planned_minutes },\n    Overloaded: { checkbox: plan.overloaded },\n  },\n  children: digest.renderNotionBlocks(model),\n};\n// The \"Today\" page: the plan as to-dos, then every other open task by due date.\nconst buckets = todayPage.bucketItems(input.open_items || [], { today: input.today, plannedIds: plan.today.map((t) => t.id), defaultPriority: CONFIG.defaults.priority });\nconst today_children = todayPage.renderTodayBlocks({ date: input.today, capacity: input.capacity, plan, buckets }, lang);\nconst footer = CONFIG.notion.today_page_id ? `🗓 <a href=\"${todayPage.pageUrl(CONFIG.notion.today_page_id)}\">${digest.escapeHtml(L.todayPage)}</a>` : '';\nreturn [{ json: { today: input.today, messages: digest.renderTelegram(model, undefined, footer), page, today_children, fyi_ids: input.fyi.map((f) => f.id), usage_planner: claude.usageOf(response) } }];"
       }
     },
     {
@@ -178,7 +179,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        1680,
+        1920,
         300
       ],
       "parameters": {
@@ -219,7 +220,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1920,
+        2160,
         300
       ],
       "parameters": {
@@ -233,7 +234,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        2160,
+        2400,
         300
       ],
       "parameters": {
@@ -262,7 +263,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2400,
+        2640,
         300
       ],
       "parameters": {
@@ -276,7 +277,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        2640,
+        2880,
         300
       ],
       "parameters": {
@@ -311,6 +312,226 @@
           "name": "notionOAuth2Api"
         }
       }
+    },
+    {
+      "name": "Read today page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        480,
+        304
+      ],
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionOAuth2Api",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "method": "GET",
+        "url": "=https://api.notion.com/v1/blocks/{{ $('Config').first().json.notion.today_page_id }}/children?page_size=100",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "name": "Checked tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        520
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// @inject src/today-page.js as todayPage\n// @end-inject\n// Tasks the owner ticked on the \"Today\" page since the last run, one item each.\n// Closing them mirrors her own decision; it is the second automatic status\n// change the rules allow (hard rule 3). No ticks: this branch ends here.\nconst blocks = $('Read today page').first().json.results || [];\nreturn todayPage.checkedTaskIds(blocks).map((id) => ({ json: { id } }));\n"
+      }
+    },
+    {
+      "name": "Close checked task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        960,
+        520
+      ],
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionOAuth2Api",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/pages/{{ $json.id }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: { Status: { select: { name: \"Done\" } } } }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "name": "Old blocks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        520
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// @inject src/today-page.js as todayPage\n// @end-inject\n// The Notion API cannot replace a page's content: the old blocks are deleted\n// one by one, then the new ones appended. One item per block; a first run on an\n// empty page yields a single null so the chain still reaches \"Write today page\".\nconst ids = todayPage.blockIds($('Read today page').first().json.results || []);\nreturn ids.length ? ids.map((block_id) => ({ json: { block_id } })) : [{ json: { block_id: null } }];\n"
+      }
+    },
+    {
+      "name": "Has old blocks?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2880,
+        520
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.block_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true
+      }
+    },
+    {
+      "name": "Delete block",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3120,
+        420
+      ],
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionOAuth2Api",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "method": "DELETE",
+        "url": "=https://api.notion.com/v1/blocks/{{ $json.block_id }}",
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 3,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      }
+    },
+    {
+      "name": "Write today page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3360,
+        520
+      ],
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "notionOAuth2Api",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            }
+          ]
+        },
+        "method": "PATCH",
+        "url": "=https://api.notion.com/v1/blocks/{{ $('Config').first().json.notion.today_page_id }}/children",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ children: $('Build digest').first().json.today_children }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "",
+          "name": "notionOAuth2Api"
+        }
+      },
+      "executeOnce": true
     }
   ],
   "connections": {
@@ -329,7 +550,7 @@
       "main": [
         [
           {
-            "node": "Fetch open items",
+            "node": "Read today page",
             "type": "main",
             "index": 0
           }
@@ -420,6 +641,11 @@
             "node": "FYI to close",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Old blocks",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -429,6 +655,73 @@
         [
           {
             "node": "Close FYI item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read today page": {
+      "main": [
+        [
+          {
+            "node": "Fetch open items",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Checked tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checked tasks": {
+      "main": [
+        [
+          {
+            "node": "Close checked task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Old blocks": {
+      "main": [
+        [
+          {
+            "node": "Has old blocks?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has old blocks?": {
+      "main": [
+        [
+          {
+            "node": "Delete block",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write today page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete block": {
+      "main": [
+        [
+          {
+            "node": "Write today page",
             "type": "main",
             "index": 0
           }

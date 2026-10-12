@@ -132,6 +132,10 @@ native Gmail and Notion nodes; WF1 stays the published one until the owner decid
 **2026-10-12, later:** the Decide step returns `needs_reply` next to `action_type`, so an
 email that needs an answer *and* some work gets both a Gmail draft and an Action task
 (`docs/PRD-REVIEW.md` §5). WF1, WF2 and WF1b carry the change; WF1 and WF2 republished.
+**2026-10-12, evening:** WF3 gained the **"Сегодня" page** (`src/today-page.js`,
+`docs/PRD-REVIEW.md` §5): one fixed Notion page rewritten each morning with the day's
+to-dos and the other open tasks by due date; ticked to-dos close their tasks on the next
+run. Seven new nodes in `workflows/WF3-morning-planner.json`.
 
 1. **WF4 Error Handler.** Error Trigger → format → Telegram. Test by pointing a throwaway
    workflow with a failing node at it.

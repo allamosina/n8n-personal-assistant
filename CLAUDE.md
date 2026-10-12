@@ -22,7 +22,9 @@ pre-existing test workflows ("My workflow …", "Gmail app"): leave them alone.
 2. **Telegram writes only to the owner's chat.** The chat ID always comes from config,
    never from an incoming message.
 3. **Never change dates, priorities or statuses in Notion automatically**, except:
-   creating items (WF0) and closing FYI items after a digest was delivered (WF3).
+   creating items (WF0), closing FYI items after a digest was delivered (WF3), and
+   closing tasks the owner ticked on the "Сегодня" page before the next digest (WF3,
+   mirroring her own decision; approved 2026-10-12).
 4. **No secrets or personal data in git.** Credentials live only in n8n. Ignore and
    exclusion lists, chat IDs, database IDs and the public hostname live in
    `config/config.local.json` and `infra/.env`, both gitignored. Built workflows in
@@ -106,6 +108,11 @@ integration token, stored as an n8n credential.
 - If a sub-workflow is ever needed, committed JSON references it as `name:<workflow
   name>`; deploy resolves names to live IDs, export turns IDs back into names. Deploy also
   sets WF4 as each workflow's error workflow and keeps credentials attached in the UI.
+- **The "Сегодня" page** (`config.notion.today_page_id`) is the owner's single view: WF3
+  rewrites it every morning (summary, the plan as to-dos with page mentions, then the other
+  open tasks under Завтра / На этой неделе / Когда-нибудь) and, before planning, closes the
+  tasks whose to-dos she ticked. Logic in `src/today-page.js`; the Notion API has no
+  "replace children", so old blocks are deleted one by one, then the new ones appended.
 - Every Notion write goes through the Upsert group (idempotent on `Source ID`). Every
   classification goes through the Decide group. Claude calls use the HTTP Request node, or
   the n8n Anthropic node through n8n Cloud's gateway credits if it supports

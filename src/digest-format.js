@@ -21,6 +21,7 @@ const LABELS = {
     due: 'срок',
     empty: 'Нет открытых задач.',
     overflow: 'Не помещается в свободное время сегодня',
+    todayPage: 'Открыть «Сегодня» в Notion',
   },
   en: {
     title: 'Plan for',
@@ -39,6 +40,7 @@ const LABELS = {
     due: 'due',
     empty: 'No open tasks.',
     overflow: 'Does not fit into free time today',
+    todayPage: 'Open "Today" in Notion',
   },
 };
 
@@ -114,11 +116,13 @@ function lineHtml(l) {
  * Telegram HTML messages, each within the 4096-character limit. Splits between
  * sections first, then between lines; a single oversized line is cut.
  */
-export function renderTelegram(model, limit = TELEGRAM_LIMIT) {
+export function renderTelegram(model, limit = TELEGRAM_LIMIT, footer = '') {
   const blocks = [`<b>${escapeHtml(model.header)}</b>\n${escapeHtml(model.summary)}`];
   for (const s of model.sections) {
     blocks.push([`<b>${escapeHtml(s.heading)}</b>`, ...s.lines.map(lineHtml)].join('\n'));
   }
+  // An optional last line (already HTML), e.g. the link to the "Today" page.
+  if (footer) blocks.push('\n' + footer);
   return splitMessage(blocks, limit);
 }
 

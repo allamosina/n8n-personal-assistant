@@ -78,3 +78,10 @@ test('Notion blocks: summary, headings, bullets, capped at 100', () => {
   const many = { ...data, fyi: Array.from({ length: 300 }, (_, i) => ({ title: 't' + i })) };
   assert.equal(renderNotionBlocks(buildDigestSections(many, 'en')).length, 100);
 });
+
+test('renderTelegram appends the footer as a last line', () => {
+  const msgs = renderTelegram(buildDigestSections(data, 'en'), TELEGRAM_LIMIT, '<a href="https://www.notion.so/x">Today</a>');
+  assert.equal(msgs.length, 1);
+  assert.match(msgs[0], /\n\n<a href="https:\/\/www\.notion\.so\/x">Today<\/a>$/);
+  assert.equal(labels('ru').todayPage, 'Открыть «Сегодня» в Notion');
+});
