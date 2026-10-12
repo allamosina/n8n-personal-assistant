@@ -62,9 +62,9 @@ export function selectFyi(items) {
     .map((it) => ({ id: it.id, title: it.title, sender: it.sender || '', link: it.link || it.url || null }));
 }
 
-/** Reply items with a Gmail draft waiting. */
+/** Open items with a Gmail draft waiting: Reply items, and Action items that also got a draft. */
 export function selectDraftsWaiting(items) {
   return (items || [])
-    .filter((it) => it.kind === 'Reply' && it.draft_created && OPEN.includes(it.status || 'Inbox'))
+    .filter((it) => it.kind !== 'FYI' && it.draft_created && OPEN.includes(it.status || 'Inbox'))
     .map((it) => ({ id: it.id, title: it.title, link: it.link || it.url || null }));
 }

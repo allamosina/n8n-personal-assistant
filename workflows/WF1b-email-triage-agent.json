@@ -76,7 +76,7 @@
         "text": "=Today: {{ $now.setZone($('Config').first().json.timezone).toFormat('yyyy-LL-dd') }}\nChannel: {{ $json.channel }}\nFrom: {{ $json.from }}\nSubject: {{ $json.subject }}\nReceived: {{ $json.received }}\n\n{{ $json.body }}",
         "hasOutputParser": true,
         "options": {
-          "systemMessage": "=You sort incoming messages for {{ $('Config').first().json.owner.name }}. {{ $('Config').first().json.owner.context }}\n\nFor each message decide:\n1. action_needed: does it require anything from the owner? Replies a person is waiting for, deadlines, invitations, requests, forms, payments: true. Newsletters, notifications, receipts, confirmations with nothing to do, marketing: false. When unsure whether a human is waiting for an answer, prefer true: missing a reply costs more than one extra task.\n2. action_type: \"email_reply\" when the action is to answer this email by email (only for channel \"email\"; for \"linkedin\" the reply happens inside LinkedIn, so use \"other\"); \"other\" for any other action; \"none\" when no action is needed.\n3. priority: \"P1\" urgent and important (a person is waiting, interview logistics, a deadline within two days); \"P2\" important this week; \"P3\" can wait; \"\" when no action is needed.\n4. estimate_min: 15, 30, 60 or 120 minutes of the owner's time; 0 when no action is needed.\n5. confidence: your probability, from 0 to 1, that action_needed is correct.\n\nIf action is needed, also write the task:\n- title: a short imperative title in {{ $('Config').first().json.language.titles === 'ru' ? 'Russian' : 'English' }}, at most 80 characters, starting with a verb. For a reply on another channel start with the channel, for example \"Reply on LinkedIn: ...\".\n- summary: one or two sentences in the same language: who wants what, and by when if stated. Facts only from the message; no greetings, signatures or quoted history.\n- due: the deadline as YYYY-MM-DD if the message states or clearly implies it, resolved against today's date given in the message; otherwise \"\". Never invent a deadline.\n- priority_reason: one short line in the same language explaining the urgency.\nIf no action is needed, title, summary, due and priority_reason are \"\".\n\nIf action_type is \"email_reply\", also write draft_body: a reply draft in the language of the incoming email. Tone: {{ $('Config').first().json.owner.tone }} Short and specific: answer what was asked, propose a concrete next step, no filler. Never invent facts, dates, numbers, availability, prices or commitments; where information is missing insert a placeholder such as [[date?]] or [[confirm?]] and set draft_needs_input to true. Do not accept or decline offers, interviews or payments on the owner's behalf unless the email leaves only one sensible answer. Plain text, ending with the signature: {{ $('Config').first().json.owner.signature }}. Otherwise draft_body is \"\" and draft_needs_input is false.\n\nChannel notes. email: automated senders (no-reply addresses, notifications) rarely need action unless they carry a deadline or a form only the owner can complete. linkedin: notification emails, often only a snippet; InMails and recruiter messages that expect an answer need action, connection requests, reactions, post notifications and \"people you may know\" do not.\n\nYou only propose. The draft is saved as a Gmail draft for the owner to review; nothing is sent.",
+          "systemMessage": "=You sort incoming messages for {{ $('Config').first().json.owner.name }}. {{ $('Config').first().json.owner.context }}\n\nFor each message decide:\n1. action_needed: does it require anything from the owner? Replies a person is waiting for, deadlines, invitations, requests, forms, payments: true. Newsletters, notifications, receipts, confirmations with nothing to do, marketing: false. When unsure whether a human is waiting for an answer, prefer true: missing a reply costs more than one extra task.\n2. action_type: \"email_reply\" when answering this email by email is the only thing to do (only for channel \"email\"; for \"linkedin\" the reply happens inside LinkedIn, so use \"other\"); \"other\" when there is something else to do (prepare, book, pay, fill a form, reply on another channel), even if a reply is also expected; \"none\" when no action is needed.\n3. needs_reply: true when this email itself should be answered by email, whatever action_type says (only for channel \"email\"). An email that asks for both an answer and some work is action_type \"other\" with needs_reply true. False for newsletters, notifications and anything that expects no answer.\n4. priority: \"P1\" urgent and important (a person is waiting, interview logistics, a deadline within two days); \"P2\" important this week; \"P3\" can wait; \"\" when no action is needed.\n5. estimate_min: 15, 30, 60 or 120 minutes of the owner's time; 0 when no action is needed.\n6. confidence: your probability, from 0 to 1, that action_needed is correct.\n\nIf action is needed, also write the task:\n- title: a short imperative title in {{ $('Config').first().json.language.titles === 'ru' ? 'Russian' : 'English' }}, at most 80 characters, starting with a verb. For a reply on another channel start with the channel, for example \"Reply on LinkedIn: ...\". When the message needs both an answer and some other work, the task is the work; the reply is drafted separately, so do not make \"reply\" the title.\n- summary: one or two sentences in the same language: who wants what, and by when if stated. Facts only from the message; no greetings, signatures or quoted history.\n- due: the deadline as YYYY-MM-DD if the message states or clearly implies it, resolved against today's date given in the message; otherwise \"\". Never invent a deadline.\n- priority_reason: one short line in the same language explaining the urgency.\nIf no action is needed, title, summary, due and priority_reason are \"\".\n\nIf needs_reply is true or action_type is \"email_reply\", also write draft_body: a reply draft in the language of the incoming email. Tone: {{ $('Config').first().json.owner.tone }} Short and specific: answer what was asked, propose a concrete next step, no filler. Never invent facts, dates, numbers, availability, prices or commitments; where information is missing insert a placeholder such as [[date?]] or [[confirm?]] and set draft_needs_input to true. Do not accept or decline offers, interviews or payments on the owner's behalf unless the email leaves only one sensible answer. Plain text, ending with the signature: {{ $('Config').first().json.owner.signature }}. Otherwise draft_body is \"\" and draft_needs_input is false.\n\nChannel notes. email: automated senders (no-reply addresses, notifications) rarely need action unless they carry a deadline or a form only the owner can complete. linkedin: notification emails, often only a snippet; InMails and recruiter messages that expect an answer need action, connection requests, reactions, post notifications and \"people you may know\" do not.\n\nYou only propose. The draft is saved as a Gmail draft for the owner to review; nothing is sent.",
           "maxIterations": 3,
           "enableStreaming": false
         }
@@ -122,7 +122,7 @@
       ],
       "parameters": {
         "schemaType": "manual",
-        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"action_needed\": {\n      \"type\": \"boolean\"\n    },\n    \"action_type\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"email_reply\",\n        \"other\",\n        \"none\"\n      ]\n    },\n    \"priority\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"P1\",\n        \"P2\",\n        \"P3\",\n        \"\"\n      ]\n    },\n    \"estimate_min\": {\n      \"type\": \"integer\",\n      \"enum\": [\n        0,\n        15,\n        30,\n        60,\n        120\n      ]\n    },\n    \"confidence\": {\n      \"type\": \"number\"\n    },\n    \"title\": {\n      \"type\": \"string\"\n    },\n    \"summary\": {\n      \"type\": \"string\"\n    },\n    \"due\": {\n      \"type\": \"string\"\n    },\n    \"priority_reason\": {\n      \"type\": \"string\"\n    },\n    \"draft_body\": {\n      \"type\": \"string\"\n    },\n    \"draft_needs_input\": {\n      \"type\": \"boolean\"\n    }\n  },\n  \"required\": [\n    \"action_needed\",\n    \"action_type\",\n    \"priority\",\n    \"estimate_min\",\n    \"confidence\",\n    \"title\",\n    \"summary\",\n    \"due\",\n    \"priority_reason\",\n    \"draft_body\",\n    \"draft_needs_input\"\n  ],\n  \"additionalProperties\": false\n}"
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"action_needed\": {\n      \"type\": \"boolean\"\n    },\n    \"action_type\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"email_reply\",\n        \"other\",\n        \"none\"\n      ]\n    },\n    \"needs_reply\": {\n      \"type\": \"boolean\"\n    },\n    \"priority\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"P1\",\n        \"P2\",\n        \"P3\",\n        \"\"\n      ]\n    },\n    \"estimate_min\": {\n      \"type\": \"integer\",\n      \"enum\": [\n        0,\n        15,\n        30,\n        60,\n        120\n      ]\n    },\n    \"confidence\": {\n      \"type\": \"number\"\n    },\n    \"title\": {\n      \"type\": \"string\"\n    },\n    \"summary\": {\n      \"type\": \"string\"\n    },\n    \"due\": {\n      \"type\": \"string\"\n    },\n    \"priority_reason\": {\n      \"type\": \"string\"\n    },\n    \"draft_body\": {\n      \"type\": \"string\"\n    },\n    \"draft_needs_input\": {\n      \"type\": \"boolean\"\n    }\n  },\n  \"required\": [\n    \"action_needed\",\n    \"action_type\",\n    \"needs_reply\",\n    \"priority\",\n    \"estimate_min\",\n    \"confidence\",\n    \"title\",\n    \"summary\",\n    \"due\",\n    \"priority_reason\",\n    \"draft_body\",\n    \"draft_needs_input\"\n  ],\n  \"additionalProperties\": false\n}"
       }
     },
     {
@@ -170,12 +170,11 @@
                 },
                 "conditions": [
                   {
-                    "leftValue": "={{ $json.output.action_type }}",
+                    "leftValue": "={{ $json.output.action_type === 'email_reply' || $json.output.needs_reply === true }}",
                     "operator": {
-                      "type": "string",
-                      "operation": "equals"
-                    },
-                    "rightValue": "email_reply"
+                      "operation": "true",
+                      "type": "boolean"
+                    }
                   }
                 ],
                 "combinator": "and"
@@ -207,8 +206,7 @@
         },
         "options": {
           "fallbackOutput": "extra",
-          "renameFallbackOutput": "Unmatched",
-          "looseTypeValidation": true
+          "renameFallbackOutput": "Unmatched"
         }
       }
     },
@@ -350,7 +348,7 @@
             },
             {
               "key": "Draft created|checkbox",
-              "checkboxValue": "={{ $('Triage agent').first().json.output.action_type === 'email_reply' }}"
+              "checkboxValue": "={{ $('Triage agent').first().json.output.action_type === 'email_reply' || $('Triage agent').first().json.output.needs_reply === true }}"
             }
           ]
         },
@@ -551,7 +549,7 @@
             },
             {
               "key": "Draft created|checkbox",
-              "checkboxValue": "={{ $('Triage agent').first().json.output.action_type === 'email_reply' }}"
+              "checkboxValue": "={{ $('Triage agent').first().json.output.action_type === 'email_reply' || $('Triage agent').first().json.output.needs_reply === true }}"
             },
             {
               "key": "Created by|select",

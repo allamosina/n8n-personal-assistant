@@ -503,20 +503,20 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "loose"
           },
           "conditions": [
             {
-              "leftValue": "={{ $json.kind }}",
+              "leftValue": "={{ $json.needs_reply }}",
               "operator": {
-                "type": "string",
-                "operation": "equals"
-              },
-              "rightValue": "Reply"
+                "type": "boolean",
+                "operation": "true"
+              }
             }
           ],
           "combinator": "and"
-        }
+        },
+        "looseTypeValidation": true
       }
     },
     {
