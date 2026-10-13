@@ -14,7 +14,7 @@ not on a self-hosted server, so there is no VPS, DNS, HTTPS or backup work.
       (claude.ai → Customize → Connectors). Claude Code sees the instance, its workflows and
       the names of its credentials, never the secrets.
 - [x] **Gmail credential** in n8n ("Gmail account", OAuth2).
-- [x] **Gmail labels** `assistant/processed` and `assistant/fyi` created (2026-10-10); their
+- [x] **Gmail labels** `assistant/processed` and `assistant/fyi` created (2026-10-10), no longer applied since 2026-10-13 (the owner can delete both labels in Gmail settings to clear them from old mail); their
       IDs are in `config/config.local.json` under `gmail.labels`.
 - [x] **Telegram bot** created in BotFather (2026-10-10). The first token was exposed and
       revoked; the new one still has to go into n8n (see To do 1).

@@ -142,6 +142,10 @@ so no-action mail is FYI only when it concerns the owner personally and noise ot
 (processed label, no Notion row), and a message confirming something already arranged is
 not an action. WF1 gained a Noise route and a "Label noise" node. WF1b does not carry
 these changes; it stays an experiment behind WF1.
+**2026-10-13:** the owner chose the agent variant: **WF1b is the published triage**, WF1
+unpublished and kept as the alternative. WF1b caught up with the bulk prefilter, the
+`fyi` verdict and the Noise route, and lost its "Label processed" node: no `assistant/*`
+labels on mail any more (visual noise); Notion `Source ID` remains the idempotency guard.
 
 1. **WF4 Error Handler.** Error Trigger → format → Telegram. Test by pointing a throwaway
    workflow with a failing node at it.

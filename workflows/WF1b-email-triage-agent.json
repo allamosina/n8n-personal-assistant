@@ -60,7 +60,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/prefilter.js as prefilter\n// @end-inject\n// Rule pre-filter: excluded and ignored senders never reach a model (hard rule 7).\nconst out = [];\n$input.all().forEach((item, idx) => {\n  const m = item.json;\n  const fromRaw =\n    typeof m.from === 'string'\n      ? m.from\n      : (m.from && (m.from.text || (m.from.value && m.from.value[0] && m.from.value[0].address))) || (m.headers && m.headers.from) || '';\n  const subject = m.subject || (m.headers && m.headers.subject) || '';\n  const verdict = prefilter.prefilterEmail({ from: fromRaw, subject }, CONFIG.filters);\n  if (verdict.action === 'drop') return;\n  const raw = m.text || m.textAsHtml || m.snippet || '';\n  const body = prefilter.trimBody(String(raw).replace(/<[^>]+>/g, ' '), CONFIG.defaults.email_body_max_chars);\n  const channel = verdict.action;\n  out.push({\n    json: {\n      message_id: m.id,\n      thread_id: m.threadId,\n      source_id: (channel === 'linkedin' ? 'linkedin:' : 'gmail:') + m.id,\n      source: channel === 'linkedin' ? 'LinkedIn' : 'Gmail',\n      channel,\n      from: fromRaw,\n      address: verdict.address,\n      subject,\n      received: m.date || (m.headers && m.headers.date) || new Date().toISOString(),\n      body,\n      link: 'https://mail.google.com/mail/u/0/#inbox/' + m.threadId,\n    },\n    pairedItem: { item: idx },\n  });\n});\nreturn out;\n"
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/prefilter.js as prefilter\n// @end-inject\n// Rule pre-filter: excluded and ignored senders never reach a model (hard rule 7);\n// mass mail (newsletters, promotions) is dropped here too, no model call, no Notion row.\nconst out = [];\n$input.all().forEach((item, idx) => {\n  const m = item.json;\n  const fromRaw =\n    typeof m.from === 'string'\n      ? m.from\n      : (m.from && (m.from.text || (m.from.value && m.from.value[0] && m.from.value[0].address))) || (m.headers && m.headers.from) || '';\n  const subject = m.subject || (m.headers && m.headers.subject) || '';\n  // Headers, text and html let the prefilter drop mass mail without a model call.\n  const verdict = prefilter.prefilterEmail({ from: fromRaw, subject, headers: m.headers, text: m.text, html: m.html }, CONFIG.filters);\n  if (verdict.action === 'drop') return;\n  const raw = m.text || m.textAsHtml || m.snippet || '';\n  const body = prefilter.trimBody(String(raw).replace(/<[^>]+>/g, ' '), CONFIG.defaults.email_body_max_chars);\n  const channel = verdict.action;\n  out.push({\n    json: {\n      message_id: m.id,\n      thread_id: m.threadId,\n      source_id: (channel === 'linkedin' ? 'linkedin:' : 'gmail:') + m.id,\n      source: channel === 'linkedin' ? 'LinkedIn' : 'Gmail',\n      channel,\n      from: fromRaw,\n      address: verdict.address,\n      subject,\n      received: m.date || (m.headers && m.headers.date) || new Date().toISOString(),\n      body,\n      link: 'https://mail.google.com/mail/u/0/#inbox/' + m.threadId,\n    },\n    pairedItem: { item: idx },\n  });\n});\nreturn out;\n"
       }
     },
     {
@@ -76,7 +76,7 @@
         "text": "=Today: {{ $now.setZone($('Config').first().json.timezone).toFormat('yyyy-LL-dd') }}\nChannel: {{ $json.channel }}\nFrom: {{ $json.from }}\nSubject: {{ $json.subject }}\nReceived: {{ $json.received }}\n\n{{ $json.body }}",
         "hasOutputParser": true,
         "options": {
-          "systemMessage": "=You sort incoming messages for {{ $('Config').first().json.owner.name }}. {{ $('Config').first().json.owner.context }}\n\nFor each message decide:\n1. action_needed: does it require anything from the owner? Replies a person is waiting for, deadlines, invitations, requests, forms, payments: true. Newsletters, notifications, receipts, confirmations with nothing to do, marketing: false. When unsure whether a human is waiting for an answer, prefer true: missing a reply costs more than one extra task.\n2. action_type: \"email_reply\" when answering this email by email is the only thing to do (only for channel \"email\"; for \"linkedin\" the reply happens inside LinkedIn, so use \"other\"); \"other\" when there is something else to do (prepare, book, pay, fill a form, reply on another channel), even if a reply is also expected; \"none\" when no action is needed.\n3. needs_reply: true when this email itself should be answered by email, whatever action_type says (only for channel \"email\"). An email that asks for both an answer and some work is action_type \"other\" with needs_reply true. False for newsletters, notifications and anything that expects no answer.\n4. priority: \"P1\" urgent and important (a person is waiting, interview logistics, a deadline within two days); \"P2\" important this week; \"P3\" can wait; \"\" when no action is needed.\n5. estimate_min: 15, 30, 60 or 120 minutes of the owner's time; 0 when no action is needed.\n6. confidence: your probability, from 0 to 1, that action_needed is correct.\n\nIf action is needed, also write the task:\n- title: a short imperative title in {{ $('Config').first().json.language.titles === 'ru' ? 'Russian' : 'English' }}, at most 80 characters, starting with a verb. For a reply on another channel start with the channel, for example \"Reply on LinkedIn: ...\". When the message needs both an answer and some other work, the task is the work; the reply is drafted separately, so do not make \"reply\" the title.\n- summary: one or two sentences in the same language: who wants what, and by when if stated. Facts only from the message; no greetings, signatures or quoted history.\n- due: the deadline as YYYY-MM-DD if the message states or clearly implies it, resolved against today's date given in the message; otherwise \"\". Never invent a deadline.\n- priority_reason: one short line in the same language explaining the urgency.\nIf no action is needed, title, summary, due and priority_reason are \"\".\n\nIf needs_reply is true or action_type is \"email_reply\", also write draft_body: a reply draft in the language of the incoming email. Tone: {{ $('Config').first().json.owner.tone }} Short and specific: answer what was asked, propose a concrete next step, no filler. Never invent facts, dates, numbers, availability, prices or commitments; where information is missing insert a placeholder such as [[date?]] or [[confirm?]] and set draft_needs_input to true. Do not accept or decline offers, interviews or payments on the owner's behalf unless the email leaves only one sensible answer. Plain text, ending with the signature: {{ $('Config').first().json.owner.signature }}. Otherwise draft_body is \"\" and draft_needs_input is false.\n\nChannel notes. email: automated senders (no-reply addresses, notifications) rarely need action unless they carry a deadline or a form only the owner can complete. linkedin: notification emails, often only a snippet; InMails and recruiter messages that expect an answer need action, connection requests, reactions, post notifications and \"people you may know\" do not.\n\nYou only propose. The draft is saved as a Gmail draft for the owner to review; nothing is sent.",
+          "systemMessage": "=You sort incoming messages for {{ $('Config').first().json.owner.name }}. {{ $('Config').first().json.owner.context }}\n\nFor each message decide:\n1. action_needed: does it require anything from the owner? Replies a person is waiting for, deadlines, invitations that need an answer, requests, forms, payments: true. Newsletters, notifications, receipts, confirmations with nothing to do, marketing: false. A message from a person that only confirms something already arranged (a lesson, a meeting link, a booking, a reminder of a planned event) is not an action unless it asks a question or needs a decision. When unsure whether a human is waiting for an answer, prefer true: missing a reply costs more than one extra task.\n2. action_type: \"email_reply\" when answering this email by email is the only thing to do (only for channel \"email\"; for \"linkedin\" the reply happens inside LinkedIn, so use \"other\"); \"other\" when there is something else to do (prepare, book, pay, fill a form, reply on another channel), even if a reply is also expected; \"none\" when no action is needed.\n3. needs_reply: true when this email itself should be answered by email, whatever action_type says (only for channel \"email\"). An email that asks for both an answer and some work is action_type \"other\" with needs_reply true. False for newsletters, notifications and anything that expects no answer.\n4. priority: \"P1\" urgent and important (a person is waiting, interview logistics, a deadline within two days); \"P2\" important this week; \"P3\" can wait; \"\" when no action is needed.\n5. estimate_min: 15, 30, 60 or 120 minutes of the owner's time; 0 when no action is needed.\n6. fyi, only if no action is needed: true when the message is personally addressed to the owner or concerns the owner directly, and the owner would want one line about it in the morning digest: a delivery or appointment today, a payment or booking confirmation, a document that is ready, a note from a person that needs no answer. False for newsletters, promotions, marketing, product updates, social notifications, generic announcements, verification codes, anything sent to a list. When action is needed, false.\n7. confidence: your probability, from 0 to 1, that action_needed is correct.\n\nIf action is needed, also write the task:\n- title: a short imperative title in {{ $('Config').first().json.language.titles === 'ru' ? 'Russian' : 'English' }}, at most 80 characters, starting with a verb. For a reply on another channel start with the channel, for example \"Reply on LinkedIn: ...\". When the message needs both an answer and some other work, the task is the work; the reply is drafted separately, so do not make \"reply\" the title.\n- summary: one or two sentences in the same language: who wants what, and by when if stated. Facts only from the message; no greetings, signatures or quoted history.\n- due: the deadline as YYYY-MM-DD if the message states or clearly implies it, resolved against today's date given in the message; otherwise \"\". Never invent a deadline.\n- priority_reason: one short line in the same language explaining the urgency.\nIf no action is needed, title, summary, due and priority_reason are \"\".\n\nIf needs_reply is true or action_type is \"email_reply\", also write draft_body: a reply draft in the language of the incoming email. Tone: {{ $('Config').first().json.owner.tone }} Short and specific: answer what was asked, propose a concrete next step, no filler. Never invent facts, dates, numbers, availability, prices or commitments; where information is missing insert a placeholder such as [[date?]] or [[confirm?]] and set draft_needs_input to true. Do not accept or decline offers, interviews or payments on the owner's behalf unless the email leaves only one sensible answer. Plain text, ending with the signature: {{ $('Config').first().json.owner.signature }}. Otherwise draft_body is \"\" and draft_needs_input is false.\n\nChannel notes. email: automated senders (no-reply addresses, notifications) rarely need action unless they carry a deadline or a form only the owner can complete; shop notifications and generic updates are noise, not fyi. linkedin: notification emails, often only a snippet; InMails and recruiter messages that expect an answer need action, connection requests, reactions, post notifications and \"people you may know\" do not.\n\nYou only propose. The draft is saved as a Gmail draft for the owner to review; nothing is sent.",
           "maxIterations": 3,
           "enableStreaming": false
         }
@@ -122,7 +122,7 @@
       ],
       "parameters": {
         "schemaType": "manual",
-        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"action_needed\": {\n      \"type\": \"boolean\"\n    },\n    \"action_type\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"email_reply\",\n        \"other\",\n        \"none\"\n      ]\n    },\n    \"needs_reply\": {\n      \"type\": \"boolean\"\n    },\n    \"priority\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"P1\",\n        \"P2\",\n        \"P3\",\n        \"\"\n      ]\n    },\n    \"estimate_min\": {\n      \"type\": \"integer\",\n      \"enum\": [\n        0,\n        15,\n        30,\n        60,\n        120\n      ]\n    },\n    \"confidence\": {\n      \"type\": \"number\"\n    },\n    \"title\": {\n      \"type\": \"string\"\n    },\n    \"summary\": {\n      \"type\": \"string\"\n    },\n    \"due\": {\n      \"type\": \"string\"\n    },\n    \"priority_reason\": {\n      \"type\": \"string\"\n    },\n    \"draft_body\": {\n      \"type\": \"string\"\n    },\n    \"draft_needs_input\": {\n      \"type\": \"boolean\"\n    }\n  },\n  \"required\": [\n    \"action_needed\",\n    \"action_type\",\n    \"needs_reply\",\n    \"priority\",\n    \"estimate_min\",\n    \"confidence\",\n    \"title\",\n    \"summary\",\n    \"due\",\n    \"priority_reason\",\n    \"draft_body\",\n    \"draft_needs_input\"\n  ],\n  \"additionalProperties\": false\n}"
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"action_needed\": {\n      \"type\": \"boolean\"\n    },\n    \"action_type\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"email_reply\",\n        \"other\",\n        \"none\"\n      ]\n    },\n    \"needs_reply\": {\n      \"type\": \"boolean\"\n    },\n    \"priority\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"P1\",\n        \"P2\",\n        \"P3\",\n        \"\"\n      ]\n    },\n    \"estimate_min\": {\n      \"type\": \"integer\",\n      \"enum\": [\n        0,\n        15,\n        30,\n        60,\n        120\n      ]\n    },\n    \"fyi\": {\n      \"type\": \"boolean\"\n    },\n    \"confidence\": {\n      \"type\": \"number\"\n    },\n    \"title\": {\n      \"type\": \"string\"\n    },\n    \"summary\": {\n      \"type\": \"string\"\n    },\n    \"due\": {\n      \"type\": \"string\"\n    },\n    \"priority_reason\": {\n      \"type\": \"string\"\n    },\n    \"draft_body\": {\n      \"type\": \"string\"\n    },\n    \"draft_needs_input\": {\n      \"type\": \"boolean\"\n    }\n  },\n  \"required\": [\n    \"action_needed\",\n    \"action_type\",\n    \"needs_reply\",\n    \"priority\",\n    \"estimate_min\",\n    \"fyi\",\n    \"confidence\",\n    \"title\",\n    \"summary\",\n    \"due\",\n    \"priority_reason\",\n    \"draft_body\",\n    \"draft_needs_input\"\n  ],\n  \"additionalProperties\": false\n}"
       }
     },
     {
@@ -136,6 +136,28 @@
       "parameters": {
         "rules": {
           "values": [
+            {
+              "renameOutput": true,
+              "outputKey": "Noise",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ !$json.output.action_needed && !$json.output.fyi }}",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
             {
               "renameOutput": true,
               "outputKey": "FYI",
@@ -361,30 +383,6 @@
         "notionOAuth2Api": {
           "id": "",
           "name": "notionOAuth2Api"
-        }
-      }
-    },
-    {
-      "name": "Label processed",
-      "type": "n8n-nodes-base.gmail",
-      "typeVersion": 2.2,
-      "position": [
-        3392,
-        592
-      ],
-      "parameters": {
-        "resource": "message",
-        "operation": "addLabels",
-        "messageId": "={{ $('Loop over emails').first().json.message_id }}",
-        "labelIds": "={{ $('Triage agent').first().json.output.action_needed ? [$('Config').first().json.gmail.labels.processed] : [$('Config').first().json.gmail.labels.processed, $('Config').first().json.gmail.labels.fyi] }}"
-      },
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 2000,
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "",
-          "name": "gmailOAuth2"
         }
       }
     },
@@ -711,6 +709,13 @@
       "main": [
         [
           {
+            "node": "Loop over emails",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Find existing",
             "type": "main",
             "index": 0
@@ -788,17 +793,6 @@
       "main": [
         [
           {
-            "node": "Label processed",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Label processed": {
-      "main": [
-        [
-          {
             "node": "Loop over emails",
             "type": "main",
             "index": 0
@@ -828,7 +822,7 @@
       "main": [
         [
           {
-            "node": "Label processed",
+            "node": "Loop over emails",
             "type": "main",
             "index": 0
           }
@@ -857,7 +851,7 @@
         ],
         [
           {
-            "node": "Label processed",
+            "node": "Loop over emails",
             "type": "main",
             "index": 0
           }
@@ -868,7 +862,7 @@
       "main": [
         [
           {
-            "node": "Label processed",
+            "node": "Loop over emails",
             "type": "main",
             "index": 0
           }
