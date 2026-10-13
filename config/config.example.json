@@ -52,12 +52,14 @@
     "jev_timeout_ms": 10000
   },
   "filters": {
-    "$comment": "exclude_* lists are the privacy list: never sent to any model. exclude_chats accepts Telegram numeric IDs, @usernames, or \"name:<display name>\" (the only way to match senders who hide their account when forwarding).",
+    "$comment": "exclude_* lists are the privacy list: never sent to any model. exclude_chats accepts Telegram numeric IDs, @usernames, or \"name:<display name>\" (the only way to match senders who hide their account when forwarding). drop_bulk: mass mail (list headers or an unsubscribe footer) is dropped before any model call; bulk_allow_domains lists senders that must still be triaged (job platforms, for example).",
     "ignore_senders": [],
     "ignore_domains": [],
     "exclude_senders": [],
     "exclude_domains": [],
     "exclude_chats": [],
+    "drop_bulk": true,
+    "bulk_allow_domains": [],
     "linkedin_domains": [
       "linkedin.com"
     ],

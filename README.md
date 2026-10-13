@@ -73,18 +73,23 @@ judgment (what needs action, titles, drafts, the plan) is a model with a strict 
 2. **Prefilter** (`src/prefilter.js`, no model). The sender is checked against the config
    lists: `exclude_*` (privacy: dropped, never shown to a model), `ignore_*` (dropped), and
    LinkedIn domains. LinkedIn job alerts are dropped by sender or subject pattern; other
-   LinkedIn notifications continue on the `linkedin` channel. The body is stripped of HTML,
-   quoted history is cut, and the text is capped at 6 000 characters.
+   LinkedIn notifications continue on the `linkedin` channel. Mass mail is dropped here
+   too, with no model call: anything with list headers (`List-Unsubscribe`, `List-Id`,
+   `Precedence: bulk`) or an unsubscribe footer, unless the sender's domain is in
+   `bulk_allow_domains`. The body is stripped of HTML, quoted history is cut, and the text
+   is capped at 6 000 characters.
 3. **Decide** (`prompts/decide.md`, Claude Haiku, structured output). Four typed answers:
    `action_needed`; `action_type` (`email_reply` when answering is the whole job, `other`
    when there is work to do); `needs_reply` (whether this email itself should get a draft,
-   independent of the task type); `priority` P1–P3 and `estimate_min` 15/30/60/120; plus a
-   self-reported confidence. `src/decide-merge.js` applies defaults and the channel rules:
+   independent of the task type); `priority` P1–P3 and `estimate_min` 15/30/60/120; for
+   no-action mail `fyi` (does it concern the owner personally and deserve one line in the
+   digest, or is it noise); plus a self-reported confidence. A message that only confirms
+   something already arranged (a lesson link, a booking) is not an action. `src/decide-merge.js` applies defaults and the channel rules:
    only Gmail can be `email_reply` (a LinkedIn reply is an `other` task to answer on
    LinkedIn), and `needs_reply` is forced true for `email_reply`. The same module can run
    Jev (TypeSafe AI) as the decider in `shadow` or `jev` mode, with Haiku as fallback.
-4. **Route.** No action: an **FYI** item is created from subject and sender, no further
-   model call. Action: **Enrich** (`prompts/enrich.md`, Haiku) writes the task title (in the
+4. **Route.** Noise: the mail is labelled processed and nothing else happens. No action but
+   `fyi`: an **FYI** item is created from subject and sender, no further model call. Action: **Enrich** (`prompts/enrich.md`, Haiku) writes the task title (in the
    configured language, imperative), a one- or two-sentence summary, a due date only when
    the email states or implies one, and a priority reason. When both a reply and other work
    are needed, the task describes the work; the reply is drafted separately.

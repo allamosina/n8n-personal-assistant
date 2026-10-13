@@ -60,7 +60,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/prefilter.js as prefilter\n// @end-inject\n// Rule pre-filter: excluded and ignored senders never reach a model (hard rule 7).\nconst out = [];\n$input.all().forEach((item, idx) => {\n  const m = item.json;\n  const fromRaw =\n    typeof m.from === 'string'\n      ? m.from\n      : (m.from && (m.from.text || (m.from.value && m.from.value[0] && m.from.value[0].address))) || (m.headers && m.headers.from) || '';\n  const subject = m.subject || (m.headers && m.headers.subject) || '';\n  const verdict = prefilter.prefilterEmail({ from: fromRaw, subject }, CONFIG.filters);\n  if (verdict.action === 'drop') return;\n  const raw = m.text || m.textAsHtml || m.snippet || '';\n  const body = prefilter.trimBody(String(raw).replace(/<[^>]+>/g, ' '), CONFIG.defaults.email_body_max_chars);\n  const channel = verdict.action;\n  out.push({\n    json: {\n      message_id: m.id,\n      thread_id: m.threadId,\n      source_id: (channel === 'linkedin' ? 'linkedin:' : 'gmail:') + m.id,\n      source: channel === 'linkedin' ? 'LinkedIn' : 'Gmail',\n      channel,\n      from: fromRaw,\n      address: verdict.address,\n      subject,\n      received: m.date || (m.headers && m.headers.date) || new Date().toISOString(),\n      body,\n      link: 'https://mail.google.com/mail/u/0/#inbox/' + m.threadId,\n    },\n    pairedItem: { item: idx },\n  });\n});\nreturn out;\n"
+        "jsCode": "const CONFIG = $('Config').first().json;\n// @inject src/prefilter.js as prefilter\n// @end-inject\n// Rule pre-filter: excluded and ignored senders never reach a model (hard rule 7);\n// mass mail (newsletters, promotions) is dropped here too, no model call, no Notion row.\nconst out = [];\n$input.all().forEach((item, idx) => {\n  const m = item.json;\n  const fromRaw =\n    typeof m.from === 'string'\n      ? m.from\n      : (m.from && (m.from.text || (m.from.value && m.from.value[0] && m.from.value[0].address))) || (m.headers && m.headers.from) || '';\n  const subject = m.subject || (m.headers && m.headers.subject) || '';\n  // Headers, text and html let the prefilter drop mass mail without a model call.\n  const verdict = prefilter.prefilterEmail({ from: fromRaw, subject, headers: m.headers, text: m.text, html: m.html }, CONFIG.filters);\n  if (verdict.action === 'drop') return;\n  const raw = m.text || m.textAsHtml || m.snippet || '';\n  const body = prefilter.trimBody(String(raw).replace(/<[^>]+>/g, ' '), CONFIG.defaults.email_body_max_chars);\n  const channel = verdict.action;\n  out.push({\n    json: {\n      message_id: m.id,\n      thread_id: m.threadId,\n      source_id: (channel === 'linkedin' ? 'linkedin:' : 'gmail:') + m.id,\n      source: channel === 'linkedin' ? 'LinkedIn' : 'Gmail',\n      channel,\n      from: fromRaw,\n      address: verdict.address,\n      subject,\n      received: m.date || (m.headers && m.headers.date) || new Date().toISOString(),\n      body,\n      link: 'https://mail.google.com/mail/u/0/#inbox/' + m.threadId,\n    },\n    pairedItem: { item: idx },\n  });\n});\nreturn out;\n"
       }
     },
     {
@@ -143,6 +143,28 @@
       "parameters": {
         "rules": {
           "values": [
+            {
+              "renameOutput": true,
+              "outputKey": "Noise",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.kind }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "Noise"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
             {
               "renameOutput": true,
               "outputKey": "FYI",
@@ -630,6 +652,30 @@
         "language": "javaScript",
         "jsCode": "// The Gmail node outputs the draft, not the item: re-attach the item (SDK rule 7).\nconst e = $('Parse draft').item.json;\nreturn { json: { ...e, draft_created: true, draft_id: $input.item.json.id || null } };\n"
       }
+    },
+    {
+      "name": "Label noise",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        120
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "addLabels",
+        "messageId": "={{ $json.message_id }}",
+        "labelIds": "={{ [$('Config').first().json.gmail.labels.processed] }}"
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "gmailOAuth2"
+        }
+      }
     }
   ],
   "connections": {
@@ -695,6 +741,13 @@
     },
     "Route by decision": {
       "main": [
+        [
+          {
+            "node": "Label noise",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "FYI item",

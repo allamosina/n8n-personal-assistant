@@ -36,14 +36,45 @@ function anyDomain(list, address) {
   return (list || []).some((d) => domainMatches(address, d));
 }
 
+// Phrases that only appear in mass mail footers (several languages).
+const UNSUBSCRIBE_RE = /(unsubscribe|opt[- ]?out|manage (your )?(e-?mail )?preferences|odhl[aá][sš]|отписаться|отписка|abbestellen|abmelden|d[eé]sabonner|darse de baja)/i;
+
+/**
+ * Header value from the Gmail trigger's `headers` object. n8n gives lower-cased
+ * keys whose values still carry the raw header line ("List-Id: <x.list-id.com>").
+ */
+function header(headers, name) {
+  if (!headers) return '';
+  const v = headers[name] ?? headers[name.toLowerCase()];
+  if (v == null) return '';
+  const raw = Array.isArray(v) ? v.join(' ') : typeof v === 'string' ? v : String(v.value ?? v);
+  return raw.replace(new RegExp('^' + name + '\\s*:\\s*', 'i'), '').trim();
+}
+
+/**
+ * Mass mail: newsletters, promotions, platform digests. Detected without a model
+ * from the list headers (RFC 2369 / 2919) or, for senders that leave them out,
+ * from an unsubscribe phrase in the body. Personal mail and most transactional
+ * notifications (a delivery today, a payment) carry neither.
+ * @param {{headers?: object, text?: string, html?: string}} email
+ */
+export function isBulkMail(email) {
+  const h = email.headers;
+  if (header(h, 'List-Unsubscribe') || header(h, 'List-Id')) return true;
+  if (/^(bulk|list|junk)$/i.test(header(h, 'Precedence'))) return true;
+  const body = String(email.text || '') + ' ' + String(email.html || '').replace(/<[^>]+>/g, ' ');
+  return UNSUBSCRIBE_RE.test(body);
+}
+
 /**
  * Decide what to do with an email before any model sees it.
  *
  * Order matters: the privacy exclusion list wins over everything, so an
  * excluded sender never reaches a model, even if it is also on LinkedIn.
  *
- * @param {{from: string, subject?: string}} email
- * @param {object} filters config.filters
+ * @param {{from: string, subject?: string, headers?: object, text?: string, html?: string}} email
+ * @param {object} filters config.filters; `drop_bulk` (default true) drops mass mail
+ *   before any model call, except senders whose domain is in `bulk_allow_domains`
  * @returns {{action: 'drop'|'linkedin'|'email', reason: string, address: string}}
  */
 export function prefilterEmail(email, filters = {}) {
@@ -65,6 +96,9 @@ export function prefilterEmail(email, filters = {}) {
     );
     if (alertSender || alertSubject) return { action: 'drop', reason: 'linkedin_job_alert', address };
     return { action: 'linkedin', reason: 'linkedin', address };
+  }
+  if (filters.drop_bulk !== false && !anyDomain(filters.bulk_allow_domains, address) && isBulkMail(email)) {
+    return { action: 'drop', reason: 'bulk', address };
   }
   return { action: 'email', reason: 'email', address };
 }
