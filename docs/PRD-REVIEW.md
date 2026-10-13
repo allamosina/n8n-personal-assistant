@@ -155,6 +155,15 @@ OpenRouter; test Russian and Czech in shadow mode".
   a task: the next run reads the ticked blocks first and sets those tasks to Done, the
   second automatic status change allowed by hard rule 3. The table stays the store the
   workflows write to; the digest keeps going to Telegram with a link to the page.
+- **Noise is a third verdict (2026-10-12).** The PRD turns every email that passes the
+  prefilter into a Notion row, FYI when nothing is to be done. In practice that made brand
+  newsletters FYI and filled the digest. Now: mass mail (list headers, or an unsubscribe
+  footer for senders that omit them) is dropped by the prefilter before any model call, with
+  `filters.bulk_allow_domains` for platforms that must still be triaged; and the decider
+  answers `fyi` for no-action mail. FYI is only what concerns the owner personally and is
+  worth one line in the morning digest; everything else is noise, which gets the processed
+  label and nothing else. The decider also learned that a message confirming something
+  already arranged (a lesson link, a booking) is not an action.
 - **Keep decision and enrichment as two calls** even when Haiku makes the decision. One
   code path is worth more than a fraction of a cent.
 - **Config and pure logic live in the repo**, not in the n8n UI: Code-node functions are ES

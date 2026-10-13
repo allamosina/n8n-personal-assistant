@@ -118,3 +118,18 @@ test('out-of-range values fall back to defaults', () => {
   const d = mergeDecision({ mode: 'haiku', haiku: parseHaikuDecision({ action_needed: true, action_type: 'call', priority: 'P0', estimate_min: 45, confidence: 0.9 }) });
   assert.deepEqual([d.action_type, d.priority, d.estimate_min], ['other', 'P2', 30]);
 });
+
+test('no action: fyi true keeps the item as FYI, false or unknown makes it Noise; action sets Reply/Action', () => {
+  const fyi = mergeDecision({ mode: 'haiku', haiku: parseHaikuDecision({ ...haikuJson, action_needed: false, action_type: null, fyi: true }) });
+  assert.deepEqual([fyi.action_needed, fyi.kind], [false, 'FYI']);
+  const noise = mergeDecision({ mode: 'haiku', haiku: parseHaikuDecision({ ...haikuJson, action_needed: false, action_type: null, fyi: false }) });
+  assert.equal(noise.kind, 'Noise');
+  const jevNo = mergeDecision({ mode: 'jev', jev: parseJevResponse(jevRaw(0.02)) });
+  assert.equal(jevNo.kind, 'Noise');
+  assert.equal(mergeDecision({ mode: 'haiku', haiku: parseHaikuDecision(haikuJson) }).kind, 'Action');
+  assert.equal(mergeDecision({ mode: 'haiku', haiku: parseHaikuDecision({ ...haikuJson, action_type: 'email_reply' }) }).kind, 'Reply');
+  // Telegram forwards are always action, whatever fyi says.
+  assert.equal(mergeDecision({ mode: 'haiku', haiku: parseHaikuDecision({ ...haikuJson, action_needed: false, fyi: false }), forceActionNeeded: true, channel: 'telegram' }).kind, 'Action');
+  const shadow = mergeDecision({ mode: 'shadow', jev: parseJevResponse(jevRaw(0.97)), haiku: parseHaikuDecision({ ...haikuJson, fyi: false }) });
+  assert.equal(shadow.shadow.haiku.fyi, false);
+});

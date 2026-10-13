@@ -222,3 +222,16 @@ calendar from the list, which puts her address into the node (and would land in 
 Instead: the committed JSON uses list mode with the value `primary`, the form WF3b verified;
 the live node keeps the owner's choice. Exports of WF3 are checked for the address.
 
+## 2026-10-12 — Gmail Trigger headers, and mass mail without list headers
+
+Tried: dropping newsletters before the model by the `List-Unsubscribe` header.
+Problem: the n8n Gmail Trigger (Simplify off) does deliver `headers`, as an object with
+lower-cased keys whose values are the raw header lines (`"List-Id: <...>"`), so the value
+has to be stripped of its own name. And some senders (Sreality's saved-search digest, seen
+in execution 72) send mass mail with no list headers at all, only an "odhlásit" link in the
+footer.
+Instead: `src/prefilter.js` `isBulkMail` checks `List-Unsubscribe`, `List-Id` and
+`Precedence`, then falls back to unsubscribe phrases in the body in several languages.
+`filters.bulk_allow_domains` keeps platforms that must still be triaged; `filters.drop_bulk`
+turns the rule off.
+

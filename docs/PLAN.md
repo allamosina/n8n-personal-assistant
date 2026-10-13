@@ -136,6 +136,12 @@ email that needs an answer *and* some work gets both a Gmail draft and an Action
 `docs/PRD-REVIEW.md` §5): one fixed Notion page rewritten each morning with the day's
 to-dos and the other open tasks by due date; ticked to-dos close their tasks on the next
 run. Seven new nodes in `workflows/WF3-morning-planner.json`.
+**2026-10-12, night:** triage tightened after the first day of real mail: mass mail is
+dropped by the prefilter (list headers or an unsubscribe footer), the decider returns `fyi`
+so no-action mail is FYI only when it concerns the owner personally and noise otherwise
+(processed label, no Notion row), and a message confirming something already arranged is
+not an action. WF1 gained a Noise route and a "Label noise" node. WF1b does not carry
+these changes; it stays an experiment behind WF1.
 
 1. **WF4 Error Handler.** Error Trigger → format → Telegram. Test by pointing a throwaway
    workflow with a failing node at it.
