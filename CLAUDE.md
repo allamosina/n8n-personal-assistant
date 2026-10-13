@@ -85,7 +85,10 @@ integration token, stored as an n8n credential.
 ## Workflow conventions
 
 - Names: `WF1 Email Triage`, `WF2 Telegram Intake`, `WF3 Morning Planner`,
-  `WF4 Error Handler`. Build order is WF4 → WF2 → WF1 → WF3 (simplest end-to-end path
+  `WF4 Error Handler`. **The published email triage is `WF1b Email Triage (agent)`**
+  (`workflows/WF1b-email-triage-agent.json`, AI Agent node, native Gmail and Notion
+  nodes) since 2026-10-13; `WF1` is unpublished and kept as the HTTP-Request alternative.
+  Changes to the triage logic go to WF1b first. Build order is WF4 → WF2 → WF1 → WF3 (simplest end-to-end path
   first). The shared steps **Upsert** (WF0 in the PRD) and **Decide** (WF5 in the PRD) are
   node groups reused inside WF1 and WF2, not separate workflows: on n8n Cloud every
   sub-workflow call counts against the 2 500 executions per month.
@@ -174,8 +177,10 @@ integration token, stored as an n8n credential.
   draft threads correctly; if not, create the draft through the Gmail API with a raw MIME
   message carrying `In-Reply-To` and `References`.
 - Telegram messages are limited to 4096 characters: `src/digest-format.js` splits by section.
-- Gmail Trigger polls; its query must exclude `label:assistant/processed`, promotions,
-  forums, spam and own sent mail. Notion `Source ID` is the real idempotency guard.
+- Gmail Trigger polls new mail only; its query excludes promotions, forums, spam and own
+  sent mail. Notion `Source ID` is the idempotency guard. The assistant puts **no labels**
+  on mail (the owner found `assistant/*` labels visual noise, 2026-10-13); WF1 still
+  carries the label nodes as the unpublished alternative.
 - Self-hosting only (`infra/`): SQLite with execution pruning; backups are a tar of the
   n8n volume.
 

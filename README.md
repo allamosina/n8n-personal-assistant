@@ -47,7 +47,7 @@ Notion connector, but the schema works with any Notion API client.
 ## How the pieces fit
 
 ```
-Gmail Trigger ──► WF1 Email Triage ──┐  each: Prefilter ──► Decide ──► Enrich ──► (Draft) ──► Upsert ──► Notion "Assistant Inbox"
+Gmail Trigger ──► WF1b Email Triage ─┐  each: Prefilter ──► Decide ──► Enrich ──► (Draft) ──► Upsert ──► Notion "Assistant Inbox"
 Telegram bot ──► WF2 Telegram Intake ┘                                                                      │
                                                                                                             ▼
 Schedule 07:30 ──► WF3 Morning Planner ◄── Google Calendar (today)                                  reads open items
@@ -66,10 +66,15 @@ exclusion list never reach a model; Notion stores a summary and a link, never a 
 Deterministic steps (filtering, dedup, date math, capacity arithmetic) are code in `src/`;
 judgment (what needs action, titles, drafts, the plan) is a model with a strict JSON schema.
 
-### WF1 Email Triage (Gmail, every 30 minutes)
+### WF1b Email Triage (Gmail, every 30 minutes)
 
-1. **Poll.** The Gmail Trigger fetches new mail, excluding mail already labelled
-   `assistant/processed`, promotions, forums, social and the owner's own sent mail.
+The published triage is the agent variant (`workflows/WF1b-email-triage-agent.json`):
+one AI Agent call per email does steps 3 to 5 in a single structured answer, with native
+Gmail and Notion nodes around it. `WF1` is the same logic as separate Claude calls over
+HTTP and stays in the repo unpublished. The steps below describe both.
+
+1. **Poll.** The Gmail Trigger fetches new mail, excluding promotions, forums, social and
+   the owner's own sent mail. Nothing is labelled: Notion `Source ID` keeps repeats out.
 2. **Prefilter** (`src/prefilter.js`, no model). The sender is checked against the config
    lists: `exclude_*` (privacy: dropped, never shown to a model), `ignore_*` (dropped), and
    LinkedIn domains. LinkedIn job alerts are dropped by sender or subject pattern; other
@@ -88,7 +93,7 @@ judgment (what needs action, titles, drafts, the plan) is a model with a strict 
    only Gmail can be `email_reply` (a LinkedIn reply is an `other` task to answer on
    LinkedIn), and `needs_reply` is forced true for `email_reply`. The same module can run
    Jev (TypeSafe AI) as the decider in `shadow` or `jev` mode, with Haiku as fallback.
-4. **Route.** Noise: the mail is labelled processed and nothing else happens. No action but
+4. **Route.** Noise: nothing happens. No action but
    `fyi`: an **FYI** item is created from subject and sender, no further model call. Action: **Enrich** (`prompts/enrich.md`, Haiku) writes the task title (in the
    configured language, imperative), a one- or two-sentence summary, a due date only when
    the email states or implies one, and a priority reason. When both a reply and other work
@@ -100,9 +105,7 @@ judgment (what needs action, titles, drafts, the plan) is a model with a strict 
 6. **Upsert** (`src/normalize-item.js`). The item is normalised (title ≤200 chars, estimate
    snapped to the allowed buckets, defaults P2 and 30 min) and written to "Assistant Inbox"
    keyed on `Source ID` (`gmail:<messageId>` or `linkedin:<messageId>`): a known item gets
-   its summary refreshed, never its status, due date, priority or estimate. The mail is then
-   labelled `assistant/processed` (and `assistant/fyi` for FYI items) so it is not polled
-   again.
+   its summary refreshed, never its status, due date, priority or estimate.
 
 ### WF2 Telegram Intake (private bot)
 
