@@ -41,6 +41,22 @@ pre-existing test workflows ("My workflow …", "Gmail app"): leave them alone.
 7. **Privacy exclusion list runs before any model call**, Jev included. Notion stores a
    summary and a link, never a full message body.
 
+## Working style
+
+- **Simple and incremental.** Small steps; run `npm test` and `npm run check` after each
+  one before moving on. Do not overengineer and do not program defensively: validate at
+  the boundaries (config, API responses) and let the rest assume valid input. Try/catch
+  only where a failure is expected and handled.
+- **Root cause before fix.** Reproduce the problem consistently and prove it with
+  evidence (a failing test, an execution log, a response body) before changing code. One
+  hypothesis at a time. No workarounds for bugs in our own code; platform limitations go
+  to the friction log instead.
+- **Latest APIs.** Use the current n8n SDK, node versions, Claude API and Notion API as
+  documented now (the n8n connector's SDK reference, `claude-api` skill), not from memory.
+- **Style.** Short modules and functions with clear names. JSDoc one-liners on exports,
+  few comments elsewhere. No emojis in code, logs or console output. Keep `README.md`
+  concise.
+
 ## Repository layout
 
 | Path | Purpose |
